@@ -9,8 +9,9 @@
 
 .NOTES
     Auteur: Ruben Draaisma
-    Datum:   $(Get-Date -Format 'yyyy-MM-dd')
-    VERSIE: 1.3.1
+    Datum: 2025-09-30
+    VERSIE: 1.4.0
+    Laatste wijziging: 2025-09-30
 #>
 
 #region Configuratie
@@ -23,21 +24,38 @@
 [string]$EventSource        = 'OpstartScript'
 [bool] $EnableShortcut      = $true      # Snelkoppeling maken ja/nee (true/false)
 [bool] $EnableFirewallReset = $true      # Firewall resetten ja/nee (true/false)
+[string]$ScriptVersion      = '1.4.0'    # Huidige scriptversie
+[bool] $ForceUpdate         = $false     # Forceer update van bestaand script
+[int]  $MaxRetries          = 3          # Maximaal aantal herhaalpogingen bij fouten
 #endregion
 
 function Initialize-Environment {
-    $global:HiddenFolderPath = Join-Path $env:LOCALAPPDATA $HiddenFolderName
-    if (-not (Test-Path $HiddenFolderPath)) {
-        New-Item -Path $HiddenFolderPath -ItemType Directory -Force | Out-Null
-    }
-    $global:LogFile = Join-Path $HiddenFolderPath $LogFileName
+    try {
+        $global:HiddenFolderPath = Join-Path $env:LOCALAPPDATA $HiddenFolderName
+        if (-not (Test-Path $HiddenFolderPath)) {
+            New-Item -Path $HiddenFolderPath -ItemType Directory -Force | Out-Null
+        }
+        # Stel verborgen attribuut in voor extra veiligheid
+        $folder = Get-Item $HiddenFolderPath -Force
+        $folder.Attributes = $folder.Attributes -bor [System.IO.FileAttributes]::Hidden
+        
+        $global:LogFile = Join-Path $HiddenFolderPath $LogFileName
+        $global:VersionFile = Join-Path $HiddenFolderPath 'version.txt'
 
-    if (-not [System.Diagnostics.EventLog]::SourceExists($EventSource)) {
-        New-EventLog -LogName Application -Source $EventSource
+        # Event source registreren (vereist admin rechten)
+        if (-not [System.Diagnostics.EventLog]::SourceExists($EventSource)) {
+            try {
+                New-EventLog -LogName Application -Source $EventSource
+            } catch {
+                Write-Warning "Kan Event Log source niet registreren: $($_.Exception.Message)"
+            }
+        }
+    } catch {
+        throw "Fout bij initialiseren omgeving: $($_.Exception.Message)"
     }
 }
 
-function Rotate-Log {
+function Backup-Log {
     if (Test-Path $LogFile) {
         $sizeMB = (Get-Item $LogFile).Length / 1MB
         if ($sizeMB -ge $MaxLogSizeMB) {
@@ -52,7 +70,7 @@ function Write-Log {
         [Parameter(Mandatory)][string]$Message,
         [ValidateSet('INFO','WARN','ERROR')][string]$Level = 'INFO'
     )
-    Rotate-Log
+    Backup-Log
     $timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
     $entry     = "{0} [{1}] {2}" -f $timestamp, $Level, $Message
     Add-Content -Path $LogFile -Value $entry
@@ -77,13 +95,39 @@ function Copy-ScriptToHidden {
         }
 
         $dest = Join-Path $HiddenFolderPath (Split-Path $source -Leaf)
-        if ($source -ne $dest) {
-            Copy-Item -Path $source -Destination $dest -Force
-            Write-Log -Message ("Script gekopieerd naar {0}" -f $dest)
+        
+        # Controleer of update nodig is
+        $needsUpdate = $ForceUpdate -or (-not (Test-Path $dest))
+        
+        if (-not $needsUpdate -and (Test-Path $VersionFile)) {
+            $currentVersion = Get-Content $VersionFile -ErrorAction SilentlyContinue
+            if ($currentVersion -ne $ScriptVersion) {
+                $needsUpdate = $true
+                Write-Log -Message "Versie-update gedetecteerd: $currentVersion -> $ScriptVersion"
+            }
+        } else {
+            $needsUpdate = $true
         }
+        
+        if ($needsUpdate) {
+            # Maak backup van bestaand script
+            if (Test-Path $dest) {
+                $backupName = "backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')_$(Split-Path $source -Leaf)"
+                $backupPath = Join-Path $HiddenFolderPath $backupName
+                Copy-Item -Path $dest -Destination $backupPath -Force
+                Write-Log -Message "Backup gemaakt: $backupName"
+            }
+            
+            Copy-Item -Path $source -Destination $dest -Force
+            Set-Content -Path $VersionFile -Value $ScriptVersion -Force
+            Write-Log -Message "Script gekopieerd naar $dest (versie $ScriptVersion)"
+        } else {
+            Write-Log -Message "Script is al up-to-date in verborgen map"
+        }
+        
         return $dest
     } catch {
-        Write-Log -Message ("Fout bij kopiëren script: {0}" -f $_.Exception.Message) -Level 'ERROR'
+        Write-Log -Message "Fout bij kopiëren script: $($_.Exception.Message)" -Level 'ERROR'
         throw
     }
 }
@@ -184,12 +228,12 @@ function Clear-WiFiProfiles {
     }
 
     # 2) Verwijder elk ongewenst profiel
-    foreach ($profile in $profiles) {
-        if ($AllowedWiFi -contains $profile) {
-            Write-Log -Message ("  Behouden profiel: {0}" -f $profile)
+    foreach ($wifiProfile in $profiles) {
+        if ($AllowedWiFi -contains $wifiProfile) {
+            Write-Log -Message ("  Behouden profiel: {0}" -f $wifiProfile)
         } else {
-            Write-Log -Message ("  Verwijder profiel: {0}" -f $profile)
-            netsh wlan delete profile name="$profile" | Out-Null
+            Write-Log -Message ("  Verwijder profiel: {0}" -f $wifiProfile)
+            netsh wlan delete profile name="$wifiProfile" | Out-Null
             if ($LASTEXITCODE -eq 0) {
                 Write-Log -Message "    Verwijdering OK"
             } else {
@@ -206,7 +250,30 @@ function Clear-TempFiles {
         Remove-Item "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
         Write-Log -Message 'Temp-bestanden verwijderd'
     } catch {
-        Write-Log -Message ("Fout bij verwijderen temp: {0}" -f $_.Exception.Message) -Level 'WARN'
+        Write-Log -Message "Fout bij verwijderen temp: $($_.Exception.Message)" -Level 'WARN'
+    }
+}
+
+function Clear-OldBackups {
+    try {
+        # Verwijder backups ouder dan 30 dagen
+        $cutoffDate = (Get-Date).AddDays(-30)
+        Get-ChildItem -Path $HiddenFolderPath -Filter 'backup_*' |
+            Where-Object { $_.CreationTime -lt $cutoffDate } |
+            ForEach-Object {
+                Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+                Write-Log -Message "Oude backup verwijderd: $($_.Name)"
+            }
+        
+        # Verwijder oude gearchiveerde logs
+        Get-ChildItem -Path $HiddenFolderPath -Filter 'script_*.log' |
+            Where-Object { $_.CreationTime -lt $cutoffDate } |
+            ForEach-Object {
+                Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+                Write-Log -Message "Oude log verwijderd: $($_.Name)"
+            }
+    } catch {
+        Write-Log -Message "Fout bij opschonen oude bestanden: $($_.Exception.Message)" -Level 'WARN'
     }
 }
 
@@ -255,7 +322,7 @@ function Register-StartupTask {
     }
 }
 
-function Ensure-ReturnShortcut {
+function Set-ReturnShortcut {
     param(
         [string]$ShortcutName = 'Terug naar start.lnk',
         [string]$TargetScriptPath  # Vul in bij aanroep: de $destPath uit Copy-ScriptToHidden
@@ -292,26 +359,56 @@ function Ensure-ReturnShortcut {
     }
 }
 
+function Invoke-WithRetry {
+    param(
+        [scriptblock]$ScriptBlock,
+        [string]$OperationName,
+        [int]$MaxAttempts = $MaxRetries
+    )
+    
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        try {
+            & $ScriptBlock
+            return
+        } catch {
+            Write-Log -Message "$OperationName poging $attempt/$MaxAttempts gefaald: $($_.Exception.Message)" -Level 'WARN'
+            if ($attempt -eq $MaxAttempts) {
+                throw
+            }
+            Start-Sleep -Seconds (2 * $attempt)
+        }
+    }
+}
+
 # === Main ===
 try {
     Initialize-Environment
-    Write-Log -Message 'Start script'
+    Write-Log -Message "Start script (versie $ScriptVersion)"
+    
     $destPath = Copy-ScriptToHidden
-    Stop-Browsers
-    Clear-EdgeData
-    Clear-FirefoxData
-    Clear-ChromeData
-    Clear-WiFiProfiles
-    Clear-TempFiles
+    
+    # Opschonen met retry-logica voor kritieke operaties
+    Invoke-WithRetry -ScriptBlock { Stop-Browsers } -OperationName "Browser stoppen"
+    Invoke-WithRetry -ScriptBlock { Clear-EdgeData } -OperationName "Edge data wissen"
+    Invoke-WithRetry -ScriptBlock { Clear-FirefoxData } -OperationName "Firefox data wissen"
+    Invoke-WithRetry -ScriptBlock { Clear-ChromeData } -OperationName "Chrome data wissen"
+    
+    Clear-WiFiProfiles  
+    Clear-TempFiles     
+    Clear-OldBackups    
+    
     if ($EnableFirewallReset) {
-        Restore-FirewallDefaults
+        Invoke-WithRetry -ScriptBlock { Restore-FirewallDefaults } -OperationName "Firewall reset"
     }
+    
     Register-StartupTask -ScriptPath $destPath
+    
     if ($EnableShortcut) {
-        Ensure-ReturnShortcut -TargetScriptPath $destPath
+        Set-ReturnShortcut -TargetScriptPath $destPath
     }
-    Write-Log -Message 'Script voltooid zonder kritieke fouten'
+    
+    Write-Log -Message "Script voltooid zonder kritieke fouten (versie $ScriptVersion)"
 } catch {
-    Write-Log -Message ("Beëindigd met fout: {0}" -f $_.Exception.Message) -Level 'ERROR'
+    Write-Log -Message "Beëindigd met fout: $($_.Exception.Message)" -Level 'ERROR'
     exit 1
 }
