@@ -10,17 +10,19 @@
 .NOTES
     Auteur: Ruben Draaisma
     Datum:   $(Get-Date -Format 'yyyy-MM-dd')
-    VERSIE: 1.3.0
+    VERSIE: 1.3.1
 #>
 
 #region Configuratie
 [string]$HiddenFolderName   = 'HiddenScripts'
 [string]$TaskName           = 'Opstart-Script'
-[string[]]$AllowedWiFi      = @('fp-portal')
+[string[]]$AllowedWiFi      = @('uw-wifi')
 [string[]]$BrowserList      = @('msedge','firefox','chrome')
 [string]$LogFileName        = 'script.log'
 [int]  $MaxLogSizeMB        = 5
 [string]$EventSource        = 'OpstartScript'
+[bool] $EnableShortcut      = $true      # Snelkoppeling maken ja/nee (true/false)
+[bool] $EnableFirewallReset = $true      # Firewall resetten ja/nee (true/false)
 #endregion
 
 function Initialize-Environment {
@@ -301,9 +303,13 @@ try {
     Clear-ChromeData
     Clear-WiFiProfiles
     Clear-TempFiles
-    Restore-FirewallDefaults
+    if ($EnableFirewallReset) {
+        Restore-FirewallDefaults
+    }
     Register-StartupTask -ScriptPath $destPath
-    Ensure-ReturnShortcut -TargetScriptPath $destPath
+    if ($EnableShortcut) {
+        Ensure-ReturnShortcut -TargetScriptPath $destPath
+    }
     Write-Log -Message 'Script voltooid zonder kritieke fouten'
 } catch {
     Write-Log -Message ("Beëindigd met fout: {0}" -f $_.Exception.Message) -Level 'ERROR'
