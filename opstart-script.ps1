@@ -9,9 +9,9 @@
 
 .NOTES
     Auteur: Ruben Draaisma
-    Datum: 2025-09-30
-    VERSIE: 1.4.0
-    Laatste wijziging: 2025-09-30
+    Datum: 2025-08-15
+    VERSIE: 1.4.1
+    Laatste wijziging: 2025-10-03
 #>
 
 #region Configuratie
@@ -23,8 +23,9 @@
 [int]  $MaxLogSizeMB        = 5
 [string]$EventSource        = 'OpstartScript'
 [bool] $EnableShortcut      = $true      # Snelkoppeling maken ja/nee (true/false)
+[bool] $EnableStartupTask   = $true      # Opstarttaak registreren ja/nee (true/false)
 [bool] $EnableFirewallReset = $true      # Firewall resetten ja/nee (true/false)
-[string]$ScriptVersion      = '1.4.0'    # Huidige scriptversie
+[string]$ScriptVersion      = '1.4.1'    # Huidige scriptversie
 [bool] $ForceUpdate         = $false     # Forceer update van bestaand script
 [int]  $MaxRetries          = 3          # Maximaal aantal herhaalpogingen bij fouten
 #endregion
@@ -287,42 +288,53 @@ function Restore-FirewallDefaults {
     }
 }
 
-function Register-StartupTask {
+function Manage-StartupTask {
     param([string]$ScriptPath)
 
     try {
         # 1) Bestaande taak ophalen
         $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 
-        if ($existing) {
-            Write-Log -Message "Geplande taak '$TaskName' bestaat al, geen aanpassingen nodig"
-            return
+        if ($EnableStartupTask) {
+            # Taak moet bestaan
+            if ($existing) {
+                Write-Log -Message "Geplande taak '$TaskName' bestaat al, geen aanpassingen nodig"
+                return
+            }
+
+            # 2) Taak aanmaken
+            $action    = New-ScheduledTaskAction -Execute 'powershell.exe' `
+                            -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ScriptPath`""
+            $trigger   = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+            $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME `
+                            -LogonType S4U -RunLevel Highest
+            $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries:$true `
+                            -StartWhenAvailable:$true -ExecutionTimeLimit (New-TimeSpan -Hours 72)
+
+            Register-ScheduledTask `
+                -TaskName $TaskName `
+                -Action $action `
+                -Trigger $trigger `
+                -Principal $principal `
+                -Settings $settings | Out-Null
+
+            Write-Log -Message "Geplande taak '$TaskName' succesvol geregistreerd"
+        } else {
+            # Taak moet NIET bestaan - verwijder indien aanwezig
+            if ($existing) {
+                Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+                Write-Log -Message "Geplande taak '$TaskName' verwijderd (uitgeschakeld in configuratie)"
+            } else {
+                Write-Log -Message "Geplande taak '$TaskName' niet aanwezig (zoals geconfigureerd)"
+            }
         }
-
-        # 2) Taak aanmaken
-        $action    = New-ScheduledTaskAction -Execute 'powershell.exe' `
-                        -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ScriptPath`""
-        $trigger   = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-        $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME `
-                        -LogonType S4U -RunLevel Highest
-        $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries:$true `
-                        -StartWhenAvailable:$true -ExecutionTimeLimit (New-TimeSpan -Hours 72)
-
-        Register-ScheduledTask `
-            -TaskName $TaskName `
-            -Action $action `
-            -Trigger $trigger `
-            -Principal $principal `
-            -Settings $settings
-
-        Write-Log -Message "Geplande taak '$TaskName' succesvol geregistreerd"
     }
     catch {
-        Write-Log -Message ("Fout bij registreren taak: {0}" -f $_.Exception.Message) -Level 'ERROR'
+        Write-Log -Message "Fout bij beheren opstarttaak: $($_.Exception.Message)" -Level 'ERROR'
     }
 }
 
-function Set-ReturnShortcut {
+function Manage-ReturnShortcut {
     param(
         [string]$ShortcutName = 'Terug naar start.lnk',
         [string]$TargetScriptPath  # Vul in bij aanroep: de $destPath uit Copy-ScriptToHidden
@@ -332,30 +344,40 @@ function Set-ReturnShortcut {
     $desktop = [Environment]::GetFolderPath('Desktop')
     $linkPath = Join-Path $desktop $ShortcutName
 
-    # 2) Bestaat-ie al?
-    if (Test-Path $linkPath) {
-        Write-Log -Message "Snelkoppeling al aanwezig: $linkPath"
-        return
-    }
-
     try {
-        # 3) Maak WScript.Shell COM-object
-        $shell = New-Object -ComObject WScript.Shell
-        $shortcut = $shell.CreateShortcut($linkPath)
+        if ($EnableShortcut) {
+            # Snelkoppeling moet bestaan
+            if (Test-Path $linkPath) {
+                Write-Log -Message "Snelkoppeling al aanwezig: $linkPath"
+                return
+            }
 
-        # 4) Instellingen voor de snelkoppeling
-        $shortcut.TargetPath = 'powershell.exe'
-        $shortcut.Arguments  = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$TargetScriptPath`""
-        $shortcut.WorkingDirectory = Split-Path $TargetScriptPath
-        # Optioneel: stel een icon in, bv. PowerShell-icoon
-        $shortcut.IconLocation = 'powershell.exe,0'
+            # 2) Maak WScript.Shell COM-object
+            $shell = New-Object -ComObject WScript.Shell
+            $shortcut = $shell.CreateShortcut($linkPath)
 
-        # 5) Opslaan
-        $shortcut.Save()
+            # 3) Instellingen voor de snelkoppeling
+            $shortcut.TargetPath = 'powershell.exe'
+            $shortcut.Arguments  = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$TargetScriptPath`""
+            $shortcut.WorkingDirectory = Split-Path $TargetScriptPath
+            # Optioneel: stel een icon in, bv. PowerShell-icoon
+            $shortcut.IconLocation = 'powershell.exe,0'
 
-        Write-Log -Message "Snelkoppeling aangemaakt: $linkPath"
+            # 4) Opslaan
+            $shortcut.Save()
+
+            Write-Log -Message "Snelkoppeling aangemaakt: $linkPath"
+        } else {
+            # Snelkoppeling moet NIET bestaan - verwijder indien aanwezig
+            if (Test-Path $linkPath) {
+                Remove-Item -Path $linkPath -Force -ErrorAction SilentlyContinue
+                Write-Log -Message "Snelkoppeling verwijderd: $linkPath (uitgeschakeld in configuratie)"
+            } else {
+                Write-Log -Message "Snelkoppeling niet aanwezig (zoals geconfigureerd)"
+            }
+        }
     } catch {
-        Write-Log -Message ("Fout bij maken snelkoppeling: {0}" -f $_.Exception.Message) -Level 'ERROR'
+        Write-Log -Message "Fout bij beheren snelkoppeling: $($_.Exception.Message)" -Level 'ERROR'
     }
 }
 
@@ -401,11 +423,11 @@ try {
         Invoke-WithRetry -ScriptBlock { Restore-FirewallDefaults } -OperationName "Firewall reset"
     }
     
-    Register-StartupTask -ScriptPath $destPath
+    # Beheer opstarttaak (aan/uit/verwijderen)
+    Manage-StartupTask -ScriptPath $destPath
     
-    if ($EnableShortcut) {
-        Set-ReturnShortcut -TargetScriptPath $destPath
-    }
+    # Beheer snelkoppeling (aan/uit/verwijderen)
+    Manage-ReturnShortcut -TargetScriptPath $destPath
     
     Write-Log -Message "Script voltooid zonder kritieke fouten (versie $ScriptVersion)"
 } catch {

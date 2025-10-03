@@ -10,12 +10,12 @@ Dit PowerShell-script is ontworpen om de opschoning en herconfiguratie van leenl
 - Verwijderen van browserdata: cache, cookies, sessies en geschiedenis
 - Verwijderen van Wi-Fi-profielen, behalve toegestane netwerken (configureerbaar)
 - Leegmaken van tijdelijke bestanden
-- Herstellen van Windows Firewall naar standaardinstellingen
+- Herstellen van Windows Firewall naar standaardinstellingen (optioneel)
 - **Automatisch onderhoud**: opschonen van oude backups en logs (30+ dagen)
 - **Robuuste foutafhandeling** met retry-logica voor kritieke operaties
 - Uitgebreide logging naar zowel bestand als Windows Event Log
-- Registreren als geplande taak bij gebruikerslogon
-- Bureaubladsnelkoppeling: 'Terug naar start' (configureerbaar)
+- **Smart configuratie**: Opstarttaak en snelkoppeling met auto-cleanup
+- **Flexibele deployment**: Volledig configureerbare functionaliteit
 
 ## Voorwaarden
 - Windows 10 of hoger
@@ -53,7 +53,8 @@ Het script is volledig configureerbaar via variabelen in het `#region Configurat
 
 ### 🔧 **Functionaliteit Switches**
 ```powershell
-[bool] $EnableShortcut      = $true               # 🖱️ Bureaubladsnelkoppeling
+[bool] $EnableShortcut      = $true               # 🖱️ Bureaubladsnelkoppeling (aan/uit + cleanup)
+[bool] $EnableStartupTask   = $true               # ⚡ Opstarttaak registreren (aan/uit + cleanup)
 [bool] $EnableFirewallReset = $true               # 🔥 Windows Firewall reset
 [bool] $ForceUpdate         = $false              # 🔄 Forceer script update
 ```
@@ -113,7 +114,7 @@ Get-EventLog -LogName Application -Source "OpstartScript" -Newest 10
 
 ## 📋 **Versie-informatie**
 
-**Huidige versie**: `1.4.0` (30 september 2025)  
+**Huidige versie**: `1.4.1` (3 oktober 2025)  
 **Compatibiliteit**: Automatische upgrade van alle vorige versies  
 **Minimum vereisten**: Windows 10, PowerShell 5.1
 
