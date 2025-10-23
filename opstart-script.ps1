@@ -4,15 +4,30 @@
 
 .DESCRIPTION
     Kopieert zichzelf naar een verborgen map, sluit browsers, verwijdert browserdata,
-    wifi‑profielen en tijdelijke bestanden, roteert de log en registreert zichzelf als
+    wifi-profielen en tijdelijke bestanden, roteert de log en registreert zichzelf als
     geplande taak bij opstart. Integreert met Windows Event Log.
+    
+    AVG-COMPLIANCE:
+    - Minimale logging van persoonsgegevens (geen usernames, netwerknamen)
+    - Automatische logretentie van 30 dagen
+    - Lokale opslag met beperkte toegang (alleen ICT)
+    - Event Log zonder PII voor kritieke berichten
 
 .NOTES
     Auteur: Ruben Draaisma
-    Datum: 2025-08-15
-    VERSIE: 1.4.1
-    Laatste wijziging: 2025-10-03
+    Datum: 2025-10-23
+    VERSIE: 1.5.0
+    Laatste wijziging: 2025-10-23 (yyyy-mm-dd)
+    AVG-conform: Minimale logging van persoonsgegevens, 30 dagen retentie
+       
+.EXAMPLE
+    .\opstart-script.ps1
+    Voert volledige opschoning uit met standaard instellingen
 #>
+
+param(
+    [switch]$PrintConfig
+)
 
 #region Configuratie
 [string]$HiddenFolderName   = 'HiddenScripts'
@@ -25,10 +40,40 @@
 [bool] $EnableShortcut      = $true      # Snelkoppeling maken ja/nee (true/false)
 [bool] $EnableStartupTask   = $true      # Opstarttaak registreren ja/nee (true/false)
 [bool] $EnableFirewallReset = $true      # Firewall resetten ja/nee (true/false)
-[string]$ScriptVersion      = '1.4.1'    # Huidige scriptversie
+[string]$ScriptVersion      = '1.5.0'    # Huidige scriptversie
 [bool] $ForceUpdate         = $false     # Forceer update van bestaand script
 [int]  $MaxRetries          = 3          # Maximaal aantal herhaalpogingen bij fouten
+[int]  $MaxExecutionMinutes = 5          # Maximale uitvoeringstijd (conform ontwerp)
+[int]  $LogRetentionDays    = 30         # AVG: Logretentie in dagen
 #endregion
+
+if ($PrintConfig) {
+    # Geef configuratie terug in een formaat dat de batchfile direct kan inlezen (set VAR=...)
+    $cfg = [ordered]@{
+        HiddenFolderName    = $HiddenFolderName
+        TaskName            = $TaskName
+        AllowedWiFi         = ($AllowedWiFi -join ',')
+        BrowserList         = ($BrowserList -join ',')
+        LogFileName         = $LogFileName
+        MaxLogSizeMB        = $MaxLogSizeMB
+        EventSource         = $EventSource
+        EnableShortcut      = $EnableShortcut
+        EnableStartupTask   = $EnableStartupTask
+        EnableFirewallReset = $EnableFirewallReset
+        ScriptVersion       = $ScriptVersion
+        ForceUpdate         = $ForceUpdate
+        MaxRetries          = $MaxRetries
+        MaxExecutionMinutes = $MaxExecutionMinutes
+        LogRetentionDays    = $LogRetentionDays
+        HiddenFolderPath    = (Join-Path $env:LOCALAPPDATA $HiddenFolderName)
+    }
+
+    foreach ($k in $cfg.Keys) {
+        $v = $cfg[$k]
+        Write-Output ("set PS_{0}={1}" -f $k, $v)
+    }
+    exit 0
+}
 
 function Initialize-Environment {
     try {
@@ -64,24 +109,45 @@ function Backup-Log {
             Rename-Item -Path $LogFile -NewName $archive -Force
         }
     }
+    
+    # AVG: Verwijder logs ouder dan retentieperiode
+    try {
+        $cutoffDate = (Get-Date).AddDays(-$LogRetentionDays)
+        Get-ChildItem -Path $HiddenFolderPath -Filter 'script_*.log' -ErrorAction SilentlyContinue |
+            Where-Object { $_.CreationTime -lt $cutoffDate } |
+            ForEach-Object {
+                Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+                Write-Verbose "AVG: Oude log verwijderd na $LogRetentionDays dagen: $($_.Name)"
+            }
+    } catch {
+        # Stille fout - mag logrotatie niet verstoren
+    }
 }
 
 function Write-Log {
     param(
         [Parameter(Mandatory)][string]$Message,
-        [ValidateSet('INFO','WARN','ERROR')][string]$Level = 'INFO'
+        [ValidateSet('INFO','WARN','ERROR')][string]$Level = 'INFO',
+        [switch]$SkipEventLog  # Voor berichten die geen PII mogen bevatten in Event Log
     )
     Backup-Log
     $timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
     $entry     = "{0} [{1}] {2}" -f $timestamp, $Level, $Message
     Add-Content -Path $LogFile -Value $entry
 
-    $eventType = switch ($Level) {
-        'ERROR' { [System.Diagnostics.EventLogEntryType]::Error }
-        'WARN'  { [System.Diagnostics.EventLogEntryType]::Warning }
-        default { [System.Diagnostics.EventLogEntryType]::Information }
+    # AVG: Alleen niet-PII berichten naar Event Log
+    if (-not $SkipEventLog) {
+        $eventType = switch ($Level) {
+            'ERROR' { [System.Diagnostics.EventLogEntryType]::Error }
+            'WARN'  { [System.Diagnostics.EventLogEntryType]::Warning }
+            default { [System.Diagnostics.EventLogEntryType]::Information }
+        }
+        try {
+            Write-EventLog -LogName Application -Source $EventSource -EntryType $eventType -EventId 1000 -Message $entry -ErrorAction SilentlyContinue
+        } catch {
+            # Event Log schrijven mag niet falen
+        }
     }
-    Write-EventLog -LogName Application -Source $EventSource -EntryType $eventType -EventId 1000 -Message $entry
 }
 
 function Copy-ScriptToHidden {
@@ -120,6 +186,15 @@ function Copy-ScriptToHidden {
             }
             
             Copy-Item -Path $source -Destination $dest -Force
+            
+            # Zet ForceUpdate op $false in de gekopieerde versie om oneindige loops te voorkomen
+            if ($ForceUpdate) {
+                $content = Get-Content -Path $dest -Raw
+                $content = $content -replace '(\$ForceUpdate\s*=\s*)\$true', '$1$false'
+                Set-Content -Path $dest -Value $content -NoNewline -Force
+                Write-Log -Message "ForceUpdate uitgeschakeld in gekopieerde versie"
+            }
+            
             Set-Content -Path $VersionFile -Value $ScriptVersion -Force
             Write-Log -Message "Script gekopieerd naar $dest (versie $ScriptVersion)"
         } else {
@@ -128,7 +203,7 @@ function Copy-ScriptToHidden {
         
         return $dest
     } catch {
-        Write-Log -Message "Fout bij kopiëren script: $($_.Exception.Message)" -Level 'ERROR'
+        Write-Log -Message "Fout bij kopieren script: $($_.Exception.Message)" -Level 'ERROR'
         throw
     }
 }
@@ -136,10 +211,12 @@ function Copy-ScriptToHidden {
 function Stop-Browsers {
     foreach ($name in $BrowserList) {
         try {
-            Get-Process -Name $name -ErrorAction SilentlyContinue |
-                Where-Object { $_.StartInfo.EnvironmentVariables['USERNAME'] -eq $env:USERNAME } |
-                Stop-Process -Force -ErrorAction SilentlyContinue
-            Write-Log -Message ("Gestopt: {0}" -f $name)
+            # AVG: Filter op proces zonder username te loggen
+            $processes = Get-Process -Name $name -ErrorAction SilentlyContinue
+            if ($processes) {
+                $processes | Stop-Process -Force -ErrorAction SilentlyContinue
+                Write-Log -Message ("Browser gestopt: {0} ({1} processen)" -f $name, $processes.Count)
+            }
         } catch {
             Write-Log -Message ("Fout bij stoppen browser {0}: {1}" -f $name, $_.Exception.Message) -Level 'WARN'
         }
@@ -216,7 +293,7 @@ function Clear-ChromeData {
 }
 
 function Clear-WiFiProfiles {
-    Write-Log -Message 'Start Wi‑Fi profiel opschoning'
+    Write-Log -Message 'Start Wi-Fi profiel opschoning'
 
     # 1) Haal alle profielen op
     $profiles = netsh wlan show profiles 2>$null |
@@ -224,26 +301,29 @@ function Clear-WiFiProfiles {
         ForEach-Object { ($_ -split ':' ,2)[1].Trim() }
 
     if (-not $profiles) {
-        Write-Log -Message 'Geen Wi‑Fi‑profielen gevonden, opschoning overgeslagen'
+        Write-Log -Message 'Geen Wi-Fi-profielen gevonden, opschoning overgeslagen'
         return
     }
 
-    # 2) Verwijder elk ongewenst profiel
+    # 2) Verwijder elk ongewenst profiel (AVG: log geen netwerknamen in detail)
+    $removedCount = 0
+    $keptCount = 0
     foreach ($wifiProfile in $profiles) {
         if ($AllowedWiFi -contains $wifiProfile) {
-            Write-Log -Message ("  Behouden profiel: {0}" -f $wifiProfile)
+            $keptCount++
+            Write-Log -Message "Profiel behouden (whitelist)" -SkipEventLog
         } else {
-            Write-Log -Message ("  Verwijder profiel: {0}" -f $wifiProfile)
-            netsh wlan delete profile name="$wifiProfile" | Out-Null
+            Write-Log -Message "Profiel verwijderd" -SkipEventLog
+            netsh wlan delete profile name="$wifiProfile" 2>&1 | Out-Null
             if ($LASTEXITCODE -eq 0) {
-                Write-Log -Message "    Verwijdering OK"
+                $removedCount++
             } else {
-                Write-Log -Message ("    Fout bij verwijderen (exit code {0})" -f $LASTEXITCODE) -Level 'WARN'
+                Write-Log -Message "Fout bij verwijderen Wi-Fi profiel (exit code $LASTEXITCODE)" -Level 'WARN'
             }
         }
     }
 
-    Write-Log -Message 'Einde Wi‑Fi profiel opschoning'
+    Write-Log -Message "Wi-Fi opschoning voltooid: $removedCount verwijderd, $keptCount behouden"
 }
 
 function Clear-TempFiles {
@@ -257,21 +337,13 @@ function Clear-TempFiles {
 
 function Clear-OldBackups {
     try {
-        # Verwijder backups ouder dan 30 dagen
-        $cutoffDate = (Get-Date).AddDays(-30)
-        Get-ChildItem -Path $HiddenFolderPath -Filter 'backup_*' |
+        # AVG: Verwijder backups ouder dan retentieperiode
+        $cutoffDate = (Get-Date).AddDays(-$LogRetentionDays)
+        Get-ChildItem -Path $HiddenFolderPath -Filter 'backup_*' -ErrorAction SilentlyContinue |
             Where-Object { $_.CreationTime -lt $cutoffDate } |
             ForEach-Object {
                 Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
-                Write-Log -Message "Oude backup verwijderd: $($_.Name)"
-            }
-        
-        # Verwijder oude gearchiveerde logs
-        Get-ChildItem -Path $HiddenFolderPath -Filter 'script_*.log' |
-            Where-Object { $_.CreationTime -lt $cutoffDate } |
-            ForEach-Object {
-                Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
-                Write-Log -Message "Oude log verwijderd: $($_.Name)"
+                Write-Log -Message "AVG: Oude backup verwijderd na $LogRetentionDays dagen"
             }
     } catch {
         Write-Log -Message "Fout bij opschonen oude bestanden: $($_.Exception.Message)" -Level 'WARN'
@@ -281,14 +353,56 @@ function Clear-OldBackups {
 function Restore-FirewallDefaults {
     try {
         Write-Log -Message 'Reset Windows Firewall naar standaardinstellingen'
-        netsh advfirewall reset | Out-Null
-        Write-Log -Message 'Firewall reset voltooid'
+
+        $resetOk = $false
+
+        # Zorg dat vereiste services draaien (BFE en MpsSvc)
+        foreach ($svc in 'BFE','MpsSvc') {
+            try {
+                $s = Get-Service -Name $svc -ErrorAction Stop
+                if ($s.Status -ne 'Running') {
+                    Start-Service -Name $svc -ErrorAction Stop
+                    Write-Log -Message "Service gestart: $svc"
+                }
+            } catch {
+                Write-Log -Message ("Service $svc kan niet worden gestart: {0}" -f $_.Exception.Message) -Level 'WARN'
+            }
+        }
+
+        # Probeer eerst 'netsh' (bewezen betrouwbaar); controleer de exitcode
+        try {
+            & netsh.exe advfirewall reset *> $null
+            $ec = $LASTEXITCODE
+            if ($ec -eq 0) { $resetOk = $true } else { Write-Log -Message "netsh advfirewall reset mislukt (exitcode $ec)" -Level 'WARN' }
+        } catch {
+            Write-Log -Message ("netsh advfirewall reset faalde: {0}" -f $_.Exception.Message) -Level 'WARN'
+        }
+
+        # Valt netsh weg? Probeer de PowerShell-cmdlet (NetSecurity-module)
+        if (-not $resetOk) {
+            try {
+                $cmd = Get-Command -Name Restore-NetFirewallDefault -ErrorAction SilentlyContinue
+                if ($cmd) {
+                    Restore-NetFirewallDefault -Confirm:$false -ErrorAction Stop | Out-Null
+                    $resetOk = $true
+                }
+            } catch {
+                Write-Log -Message ("Restore-NetFirewallDefault faalde: {0}" -f $_.Exception.Message) -Level 'WARN'
+            }
+        }
+
+        if ($resetOk) {
+            Write-Log -Message 'Firewall reset voltooid'
+        } else {
+            Write-Log -Message 'Firewall reset niet gelukt - mogelijk geblokkeerd door beleid of rechten' -Level 'WARN'
+        }
     } catch {
         Write-Log -Message ("Fout bij reset firewall: {0}" -f $_.Exception.Message) -Level 'ERROR'
     }
+    return $resetOk
 }
 
-function Manage-StartupTask {
+function Set-StartupTask {
     param([string]$ScriptPath)
 
     try {
@@ -296,45 +410,52 @@ function Manage-StartupTask {
         $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 
         if ($EnableStartupTask) {
-            # Taak moet bestaan
-            if ($existing) {
-                Write-Log -Message "Geplande taak '$TaskName' bestaat al, geen aanpassingen nodig"
-                return
-            }
-
-            # 2) Taak aanmaken
+            # 2) Taak aanmaken of bijwerken
             $action    = New-ScheduledTaskAction -Execute 'powershell.exe' `
                             -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ScriptPath`""
             $trigger   = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
             $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME `
                             -LogonType S4U -RunLevel Highest
+            # ExecutionTimeLimit afgestemd op MaxExecutionMinutes met kleine buffer (minimaal 10 minuten)
+            $limitMinutes = [Math]::Max($MaxExecutionMinutes + 5, 10)
             $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries:$true `
-                            -StartWhenAvailable:$true -ExecutionTimeLimit (New-TimeSpan -Hours 72)
+                            -StartWhenAvailable:$true `
+                            -ExecutionTimeLimit (New-TimeSpan -Minutes $limitMinutes)
 
             Register-ScheduledTask `
                 -TaskName $TaskName `
                 -Action $action `
                 -Trigger $trigger `
                 -Principal $principal `
-                -Settings $settings | Out-Null
+                -Settings $settings `
+                -Force | Out-Null
 
-            Write-Log -Message "Geplande taak '$TaskName' succesvol geregistreerd"
+            if ($existing) {
+                Write-Log -Message "Geplande taak '$TaskName' bijgewerkt"
+                return 'updated'
+            } else {
+                Write-Log -Message "Geplande taak '$TaskName' succesvol geregistreerd"
+                return 'created'
+            }
         } else {
             # Taak moet NIET bestaan - verwijder indien aanwezig
             if ($existing) {
                 Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
                 Write-Log -Message "Geplande taak '$TaskName' verwijderd (uitgeschakeld in configuratie)"
+                return 'removed'
             } else {
                 Write-Log -Message "Geplande taak '$TaskName' niet aanwezig (zoals geconfigureerd)"
+                return 'absent'
             }
         }
     }
     catch {
         Write-Log -Message "Fout bij beheren opstarttaak: $($_.Exception.Message)" -Level 'ERROR'
+        return 'error'
     }
 }
 
-function Manage-ReturnShortcut {
+function Set-DesktopShortcut {
     param(
         [string]$ShortcutName = 'Terug naar start.lnk',
         [string]$TargetScriptPath  # Vul in bij aanroep: de $destPath uit Copy-ScriptToHidden
@@ -346,38 +467,52 @@ function Manage-ReturnShortcut {
 
     try {
         if ($EnableShortcut) {
-            # Snelkoppeling moet bestaan
-            if (Test-Path $linkPath) {
-                Write-Log -Message "Snelkoppeling al aanwezig: $linkPath"
-                return
-            }
+            $exists = Test-Path $linkPath
 
             # 2) Maak WScript.Shell COM-object
             $shell = New-Object -ComObject WScript.Shell
             $shortcut = $shell.CreateShortcut($linkPath)
 
-            # 3) Instellingen voor de snelkoppeling
-            $shortcut.TargetPath = 'powershell.exe'
-            $shortcut.Arguments  = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$TargetScriptPath`""
-            $shortcut.WorkingDirectory = Split-Path $TargetScriptPath
+            # 3) Instellingen voor de snelkoppeling (twee paden):
+            if ($EnableStartupTask) {
+                # a) Met geplande taak: start de taak (elevated, geen UAC prompt)
+                $shortcut.TargetPath = 'schtasks.exe'
+                $shortcut.Arguments  = "/Run /TN `"$TaskName`""
+                $shortcut.WorkingDirectory = $env:SystemRoot
+                Write-Log -Message "Snelkoppeling start geplande taak: $TaskName"
+            } else {
+                # b) Zonder geplande taak: self-elevate via Start-Process -Verb RunAs (toont UAC prompt)
+                $shortcut.TargetPath = 'powershell.exe'
+                $shortcut.Arguments  = ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Process -Verb RunAs -WindowStyle Hidden -FilePath ''powershell.exe'' -ArgumentList ''-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{0}""''"' -f $TargetScriptPath)
+                $shortcut.WorkingDirectory = Split-Path $TargetScriptPath
+                Write-Log -Message "Snelkoppeling start script met UAC elevatie: $TargetScriptPath"
+            }
             # Optioneel: stel een icon in, bv. PowerShell-icoon
             $shortcut.IconLocation = 'powershell.exe,0'
 
-            # 4) Opslaan
+            # 4) Opslaan (bijwerken of aanmaken)
             $shortcut.Save()
-
-            Write-Log -Message "Snelkoppeling aangemaakt: $linkPath"
+            if ($exists) {
+                Write-Log -Message "Snelkoppeling bijgewerkt: $linkPath"
+                return 'updated'
+            } else {
+                Write-Log -Message "Snelkoppeling aangemaakt: $linkPath"
+                return 'created'
+            }
         } else {
             # Snelkoppeling moet NIET bestaan - verwijder indien aanwezig
             if (Test-Path $linkPath) {
                 Remove-Item -Path $linkPath -Force -ErrorAction SilentlyContinue
                 Write-Log -Message "Snelkoppeling verwijderd: $linkPath (uitgeschakeld in configuratie)"
+                return 'removed'
             } else {
                 Write-Log -Message "Snelkoppeling niet aanwezig (zoals geconfigureerd)"
+                return 'absent'
             }
         }
     } catch {
         Write-Log -Message "Fout bij beheren snelkoppeling: $($_.Exception.Message)" -Level 'ERROR'
+        return 'error'
     }
 }
 
@@ -402,35 +537,214 @@ function Invoke-WithRetry {
     }
 }
 
-# === Main ===
-try {
-    Initialize-Environment
-    Write-Log -Message "Start script (versie $ScriptVersion)"
+function Show-CompletionStatus {
+    param(
+        [Parameter(Mandatory)][bool]$Success,
+        [string]$ErrorMessage = '',
+                [double]$ExecutionTimeSeconds,
+                [string[]]$CompletedItems = @(),
+                [string[]]$SkippedItems = @(),
+                [string[]]$ProvisioningCompleted = @(),
+                [string[]]$ProvisioningSkipped = @()
+    )
     
-    $destPath = Copy-ScriptToHidden
+    $statusFile = Join-Path $HiddenFolderPath 'laatste_status.txt'
+    $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     
-    # Opschonen met retry-logica voor kritieke operaties
-    Invoke-WithRetry -ScriptBlock { Stop-Browsers } -OperationName "Browser stoppen"
-    Invoke-WithRetry -ScriptBlock { Clear-EdgeData } -OperationName "Edge data wissen"
-    Invoke-WithRetry -ScriptBlock { Clear-FirefoxData } -OperationName "Firefox data wissen"
-    Invoke-WithRetry -ScriptBlock { Clear-ChromeData } -OperationName "Chrome data wissen"
-    
-    Clear-WiFiProfiles  
-    Clear-TempFiles     
-    Clear-OldBackups    
-    
-    if ($EnableFirewallReset) {
-        Invoke-WithRetry -ScriptBlock { Restore-FirewallDefaults } -OperationName "Firewall reset"
+    if ($Success) {
+                $lines = @()
+                foreach ($item in $CompletedItems) { $lines += "+ $item" }
+                foreach ($item in $SkippedItems)   { $lines += "- $item" }
+
+                $details = ($lines -join [Environment]::NewLine)
+                $provLines = @()
+                foreach ($item in $ProvisioningCompleted) { $provLines += "+ $item" }
+                foreach ($item in $ProvisioningSkipped)   { $provLines += "- $item" }
+                $provBlock = if ($provLines.Count -gt 0) { "Voorzieningen:" + [Environment]::NewLine + ($provLines -join [Environment]::NewLine) + [Environment]::NewLine } else { '' }
+
+                $statusMessage = @"
+===================================================
+OPSCHONING VOLTOOID - APPARAAT KLAAR VOOR UITLEEN
+===================================================
+Tijdstip: $timestamp
+Versie: $ScriptVersion
+Uitvoeringstijd: $([math]::Round($ExecutionTimeSeconds, 1)) seconden
+
+$details
+$provBlock
+
+STATUS: SUCCES - Apparaat is schoon en klaar
+===================================================
+"@
+        Write-Host $statusMessage -ForegroundColor Green
+        Write-Log -Message "OPSCHONING SUCCESVOL VOLTOOID in $([math]::Round($ExecutionTimeSeconds, 1))s"
+    } else {
+                $lines = @()
+                foreach ($item in $CompletedItems) { $lines += "+ $item" }
+                foreach ($item in $SkippedItems)   { $lines += "- $item" }
+                $details = if ($lines.Count -gt 0) { [Environment]::NewLine + ($lines -join [Environment]::NewLine) + [Environment]::NewLine } else { '' }
+                $provLines = @()
+                foreach ($item in $ProvisioningCompleted) { $provLines += "+ $item" }
+                foreach ($item in $ProvisioningSkipped)   { $provLines += "- $item" }
+                $provBlock = if ($provLines.Count -gt 0) { ($provLines -join [Environment]::NewLine) + [Environment]::NewLine } else { '' }
+
+                $statusMessage = @"
+===================================================
+OPSCHONING MISLUKT - HANDMATIGE INTERVENTIE VEREIST
+===================================================
+Tijdstip: $timestamp
+Versie: $ScriptVersion
+
+X FOUT: $ErrorMessage
+$details$provBlock
+STATUS: FAILED - Meld dit apparaat bij ICT servicedesk
+Log locatie: $LogFile
+===================================================
+"@
+        Write-Host $statusMessage -ForegroundColor Red
+        Write-Log -Message "OPSCHONING GEFAALD: $ErrorMessage" -Level 'ERROR'
     }
     
-    # Beheer opstarttaak (aan/uit/verwijderen)
-    Manage-StartupTask -ScriptPath $destPath
+    # Schrijf status naar bestand voor servicedesk
+    Set-Content -Path $statusFile -Value $statusMessage -Force
     
-    # Beheer snelkoppeling (aan/uit/verwijderen)
-    Manage-ReturnShortcut -TargetScriptPath $destPath
+    # Wacht 10 seconden zodat servicedesk het kan lezen
+    if (-not $Success) {
+        Start-Sleep -Seconds 10
+    }
+}
+
+# === Main ===
+$startTime = Get-Date
+$executionSuccessful = $false
+$errorDetails = ''
+${completedSteps} = @()
+${skippedSteps} = @()
+${provCompleted} = @()
+${provSkipped} = @()
+
+try {
+    Initialize-Environment
+    Write-Log -Message "START opschoning leenlaptop (versie $ScriptVersion)"
     
-    Write-Log -Message "Script voltooid zonder kritieke fouten (versie $ScriptVersion)"
+    # Timeout mechanisme (conform ontwerp: max 5 minuten)
+    $timeoutJob = Start-Job -ScriptBlock {
+        param($MaxMinutes)
+        Start-Sleep -Seconds ($MaxMinutes * 60)
+    } -ArgumentList $MaxExecutionMinutes
+    
+    try {
+        $destPath = Copy-ScriptToHidden
+        
+        # Opschonen met retry-logica voor kritieke operaties - alleen browsers in de lijst
+        Invoke-WithRetry -ScriptBlock { Stop-Browsers } -OperationName "Browser stoppen"
+        
+        # Alleen browser data wissen voor browsers in de $BrowserList
+        if ($BrowserList -contains 'msedge') {
+            Invoke-WithRetry -ScriptBlock { Clear-EdgeData } -OperationName "Edge data wissen"
+        }
+        if ($BrowserList -contains 'firefox') {
+            Invoke-WithRetry -ScriptBlock { Clear-FirefoxData } -OperationName "Firefox data wissen"
+        }
+        if ($BrowserList -contains 'chrome') {
+            Invoke-WithRetry -ScriptBlock { Clear-ChromeData } -OperationName "Chrome data wissen"
+        }
+        
+        # Noteer resultaat voor statusoverzicht
+        if ($BrowserList -and $BrowserList.Count -gt 0) {
+            $completedSteps += ("Browsers gestopt en data verwijderd ({0})" -f (($BrowserList | Sort-Object) -join ', '))
+        } else {
+            $skippedSteps += 'Browser opschoning (geen browsers geconfigureerd)'
+        }
+        
+        Clear-WiFiProfiles  
+        Clear-TempFiles     
+        Clear-OldBackups    
+        # Noteer resultaten
+        if ($AllowedWiFi -and $AllowedWiFi.Count -gt 0) {
+            $completedSteps += 'Wi-Fi profielen gefilterd (whitelist actief)'
+        } else {
+            $completedSteps += 'Wi-Fi profielen opgeschoond'
+        }
+        $completedSteps += 'Tijdelijke bestanden opgeschoond'
+        
+        if ($EnableFirewallReset) {
+            $fwOk = Invoke-WithRetry -ScriptBlock { Restore-FirewallDefaults } -OperationName "Firewall reset"
+            if ($fwOk) {
+                $completedSteps += 'Firewall gereset naar standaardinstellingen'
+            } else {
+                $skippedSteps  += 'Firewall reset mislukt'
+            }
+        } else {
+            $skippedSteps += 'Firewall reset (uitgeschakeld in configuratie)'
+        }
+        
+        # Beheer opstarttaak (aan/uit/verwijderen)
+        $taskResult = Set-StartupTask -ScriptPath $destPath
+        if ($EnableStartupTask) {
+            switch ($taskResult) {
+                'created' { $provCompleted += "Geplande taak geregistreerd: $TaskName" }
+                'updated' { $provCompleted += "Geplande taak bijgewerkt: $TaskName" }
+                'error'   { $provSkipped   += "Geplande taak kon niet worden ingesteld: $TaskName" }
+                default   { $provSkipped   += "Geplande taak status onbekend: $TaskName" }
+            }
+        } else {
+            switch ($taskResult) {
+                'removed' { $provSkipped += "Geplande taak uitgeschakeld" }
+                'absent'  { $provSkipped += "Geplande taak uitgeschakeld" }
+                'error'   { $provSkipped += "Geplande taak uitschakelen mislukt" }
+                default   { $provSkipped += "Geplande taak uitgeschakeld" }
+            }
+        }
+        
+        # Beheer snelkoppeling (aan/uit/verwijderen)
+        $scResult = Set-DesktopShortcut -TargetScriptPath $destPath
+        if ($EnableShortcut) {
+            switch ($scResult) {
+                'created' { $provCompleted += "Snelkoppeling op bureaublad aangemaakt" }
+                'updated' { $provCompleted += "Snelkoppeling op bureaublad bijgewerkt" }
+                'error'   { $provSkipped   += "Snelkoppeling aanmaken/bijwerken mislukt" }
+                default   { $provSkipped   += "Snelkoppeling status onbekend" }
+            }
+        } else {
+            switch ($scResult) {
+                'removed' { $provSkipped += "Snelkoppeling uitgeschakeld" }
+                'absent'  { $provSkipped += "Snelkoppeling uitgeschakeld" }
+                'error'   { $provSkipped += "Snelkoppeling verwijderen mislukt" }
+                default   { $provSkipped += "Snelkoppeling uitgeschakeld" }
+            }
+        }
+        
+        # Check of we binnen de tijd zijn gebleven
+        $elapsed = (Get-Date) - $startTime
+        if ($elapsed.TotalMinutes -gt $MaxExecutionMinutes) {
+            throw "Maximale uitvoeringstijd ($MaxExecutionMinutes minuten) overschreden"
+        }
+        
+        $executionSuccessful = $true
+        Write-Log -Message "EINDE opschoning - alle taken succesvol voltooid"
+        
+    } finally {
+        # Stop timeout job
+        if ($timeoutJob) {
+            Stop-Job -Job $timeoutJob -ErrorAction SilentlyContinue
+            Remove-Job -Job $timeoutJob -Force -ErrorAction SilentlyContinue
+        }
+    }
+    
 } catch {
-    Write-Log -Message "Beëindigd met fout: $($_.Exception.Message)" -Level 'ERROR'
-    exit 1
+    $executionSuccessful = $false
+    $errorDetails = $_.Exception.Message
+    Write-Log -Message "KRITIEKE FOUT tijdens opschoning: $errorDetails" -Level 'ERROR'
+} finally {
+    # Bereken totale uitvoeringstijd
+    $totalSeconds = ((Get-Date) - $startTime).TotalSeconds
+    
+    # Toon duidelijke status voor servicedesk (conform ontwerp: SUCCES/FAIL)
+    Show-CompletionStatus -Success $executionSuccessful -ErrorMessage $errorDetails -ExecutionTimeSeconds $totalSeconds -CompletedItems $completedSteps -SkippedItems $skippedSteps -ProvisioningCompleted $provCompleted -ProvisioningSkipped $provSkipped
+    
+    # Exit code voor monitoring
+    if (-not $executionSuccessful) {
+        exit 1
+    }
 }
