@@ -4,6 +4,109 @@ Alle belangrijke wijzigingen aan dit project worden gedocumenteerd in dit bestan
 
 ---
 
+## [1.6.0] - 2025-11-03
+
+### ⚠️ BREAKING CHANGES - Automatische Migratie
+- **GEWIJZIGD**: Installatiemap verplaatst van `%LOCALAPPDATA%\HiddenScripts` naar `C:\ProgramData\LeenlaptopSchoonmaak`
+- **GEWIJZIGD**: Scheduled task naam: `Opstart-Script` → `LeenlaptopSchoonmaak`
+- **GEWIJZIGD**: Snelkoppeling naam: `Terug naar start.lnk` → `Leenlaptop Opschonen.lnk`
+- **GEWIJZIGD**: Logbestand naam: `script.log` → `log.txt`
+- **GEWIJZIGD**: Event Log source: `OpstartScript` → `LeenlaptopSchoonmaak`
+- **AUTOMATISCH**: Script detecteert v1.5.0 en migreert automatisch alle bestanden
+- **AUTOMATISCH**: Oude scheduled task en snelkoppelingen worden verwijderd
+- **VEILIG**: Oude map wordt alleen verwijderd na succesvolle migratie
+
+### 🎯 Volledig Configureerbare Opschoning
+- **TOEGEVOEGD**: `$EnableBrowserCleanup` - Browser opschoning in/uitschakelen (standaard: AAN)
+- **TOEGEVOEGD**: `$EnableWiFiCleanup` - Wi-Fi profiel opschoning in/uitschakelen (standaard: AAN)
+- **TOEGEVOEGD**: `$EnableTempCleanup` - Tijdelijke bestanden opschoning in/uitschakelen (standaard: AAN)
+- **TOEGEVOEGD**: `$EnableDownloadsCleanup` - Downloads-map opschoning in/uitschakelen (standaard: AAN)
+- **TOEGEVOEGD**: `$DownloadsMaxAgeDays` - Alleen bestanden ouder dan X dagen (standaard: 7)
+- **TOEGEVOEGD**: `$EnableDocumentsCleanup` - Documenten-map opschoning in/uitschakelen (standaard: UIT)
+- **TOEGEVOEGD**: `$DocumentsMaxAgeDays` - Alleen bestanden ouder dan X dagen (standaard: 30)
+- **TOEGEVOEGD**: `$EnablePicturesCleanup` - Afbeeldingen-map opschoning in/uitschakelen (standaard: UIT)
+- **TOEGEVOEGD**: `$PicturesMaxAgeDays` - Alleen bestanden ouder dan X dagen (standaard: 30)
+- **TOEGEVOEGD**: `$EnableVideosCleanup` - Video's-map opschoning in/uitschakelen (standaard: UIT)
+- **TOEGEVOEGD**: `$VideosMaxAgeDays` - Alleen bestanden ouder dan X dagen (standaard: 30)
+- **TOEGEVOEGD**: `$EnableMusicCleanup` - Muziek-map opschoning in/uitschakelen (standaard: UIT)
+- **TOEGEVOEGD**: `$MusicMaxAgeDays` - Alleen bestanden ouder dan X dagen (standaard: 30)
+- **TOEGEVOEGD**: `$EnableFirewallReset` - Firewall reset in/uitschakelen (standaard: AAN)
+- **TOEGEVOEGD**: `$EnableBackupCleanup` - Oude backups opschoning in/uitschakelen (standaard: AAN)
+
+### 📁 Slimme User-Map Opschoning met Leeftijdsfiltering
+- **TOEGEVOEGD**: `Clear-PicturesFolder` functie - Opschonen Afbeeldingen-map met leeftijdsfilter
+- **TOEGEVOEGD**: `Clear-VideosFolder` functie - Opschonen Video's-map met leeftijdsfilter
+- **TOEGEVOEGD**: `Clear-MusicFolder` functie - Opschonen Muziek-map met leeftijdsfilter
+- **VERBETERD**: `Clear-DownloadsFolder` gebruikt nu `$DownloadsMaxAgeDays` (standaard: 7 dagen)
+- **VERBETERD**: `Clear-DocumentsFolder` gebruikt nu `$DocumentsMaxAgeDays` (standaard: 30 dagen)
+- **VERBETERD**: Alle functies verwijderen alleen bestanden ouder dan X dagen (niet alles!)
+- **VERBETERD**: Alle user-map functies geven itemCount terug voor statusrapportage
+- **VERBETERD**: WAARSCHUWING in logs bij opschonen van media-mappen
+- **VEILIG**: Alle media-mappen standaard uitgeschakeld (zoals Documenten)
+- **GEDOCUMENTEERD**: Alle functies bevatten comments over gebruikerscontext (ingelogde user)
+
+### 🖥️ Desktop Snelkoppeling Verbeteringen
+- **TOEGEVOEGD**: `Get-ActualUserDesktop` functie - Intelligente desktop detectie
+- **VERBETERD**: Snelkoppeling wordt nu op juiste gebruiker's desktop geplaatst bij admin-sessies
+- **TOEGEVOEGD**: Meerdere detectiemethodes: query user, WMI, Public Desktop fallback
+- **AVG-COMPLIANT**: Geen usernames in logs, alleen detectiemethode
+- **OPGELOST**: Snelkoppeling verschijnt niet meer op admin desktop bij elevated sessies
+- **FALLBACK**: Public Desktop als vangnet (zichtbaar voor alle gebruikers)
+
+### 📊 Verbeterde Status Rapportage
+- **VERBETERD**: Wi-Fi cleanup geeft nu duidelijk terug: geen profielen/actie uitgevoerd/overgeslagen
+- **VERBETERD**: Browser cleanup toont welke browsers verwerkt zijn
+- **VERBETERD**: Elk cleanup item toont aantal verwerkte items waar relevant
+- **VERBETERD**: Betere onderscheid tussen "uitgeschakeld", "was leeg", en "geen items gevonden"
+- **TOEGEVOEGD**: Alle cleanup functies returnen getallen voor accurate rapportage
+
+### 🎨 Initial Setup Verbeteringen
+- **VERBETERD**: Setup toont nu gestructureerd overzicht: VOORZIENINGEN / OPSCHONING / RETENTIE
+- **TOEGEVOEGD**: Alle nieuwe configuratieopties zichtbaar in setup
+- **VERBETERD**: WAARSCHUWING! label bij hoge-risico opties (Documenten, Media)
+- **VERBETERD**: Duidelijkere bevestigingstekst: "Wilt u doorgaan met de installatie?"
+- **TOEGEVOEGD**: Browser- en WiFi-lijst details in configuratie-overzicht
+
+### 🔒 AVG & Privacy
+- **AVG-COMPLIANT**: Geen gebruikersnamen in logs bij desktop detectie
+- **AVG-COMPLIANT**: `-SkipEventLog` flag voor PII-gevoelige berichten
+- **ONGEWIJZIGD**: Logretentie blijft 30 dagen (AVG-conform)
+- **VERBETERD**: Alle nieuwe functies respecteren AVG-logging principes
+
+### �️ Admin Rights Handling
+- **TOEGEVOEGD**: `Test-IsAdmin` functie - Detecteert administrator privileges
+- **VERBETERD**: Script waarschuwt bij starten zonder admin rechten
+- **VERBETERD**: WiFi cleanup, Firewall reset, Scheduled task graceful degradation
+- **VERBETERD**: Functies returnen 'no-admin' status voor duidelijke rapportage
+- **GEBRUIKSVRIENDELIJK**: Script crasht niet meer zonder admin rechten
+
+### 📖 Documentatie
+- **TOEGEVOEGD**: `SERVICEDESK.md` - Praktische handleiding voor servicedesk medewerkers
+- **TOEGEVOEGD**: Migratie-instructies in SERVICEDESK.md (v1.5.0 → v1.6.0)
+- **TOEGEVOEGD**: 4 scenario voorbeelden met concrete configuraties
+- **TOEGEVOEGD**: Troubleshooting sectie met veelvoorkomende problemen
+- **TOEGEVOEGD**: Checklist voor nieuwe laptop setup
+- **VERBETERD**: README.md met configuratie-scenario's
+- **VERBETERD**: AVG-COMPLIANCE.md met v1.6.0 privacy impact
+- **TOEGEVOEGD**: GEBRUIKERSCONTEXT sectie in script header
+
+### � Technische Verbeteringen
+- **GEMODERNISEERD**: `Get-WmiObject` vervangen door `Get-CimInstance` (Windows 11 25H2 compatible)
+- **TOEKOMSTBESTENDIG**: WMIC command-line tool is verwijderd in Windows 11 25H2, script gebruikt moderne CIM cmdlets
+- **TOEGEVOEGD**: Configuratie instructies in script header (array syntax, quotes vereist)
+- **TOEGEVOEGD**: Inline voorbeelden voor `$AllowedWiFi` en `$BrowserList` configuratie
+
+### �🐛 Bugfixes
+- **OPGELOST**: Ongebruikte `$desktop` variabele verwijderd uit `Get-ActualUserDesktop`
+- **OPGELOST**: WiFi melding zei altijd "opgeschoond" zelfs als er geen profielen waren
+- **OPGELOST**: Browser cleanup draaide altijd, nu alleen als `$EnableBrowserCleanup = $true`
+- **OPGELOST**: Downloads path gebruikte string replace hack, nu Shell.Application COM object
+- **OPGELOST**: Temp/user-folder cleanup functies verwijderden alles, nu alleen oude bestanden
+- **OPGELOST**: Lege `$BrowserList` gaf geen duidelijke melding
+- **OPGELOST**: Array syntax zonder quotes crashte script (nu gedocumenteerd met voorbeelden)
+
+---
+
 ## [1.5.0] - 2025-10-23
 
 ### 🐛 Kritieke Bugfix (pre-release)

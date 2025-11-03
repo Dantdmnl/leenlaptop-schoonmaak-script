@@ -7,6 +7,13 @@
     wifi-profielen en tijdelijke bestanden, roteert de log en registreert zichzelf als
     geplande taak bij opstart. Integreert met Windows Event Log.
     
+    GEBRUIKERSCONTEXT:
+    - Dit script wordt uitgevoerd in de context van de INGELOGDE gebruiker
+    - Bij installatie via scheduled task: -UserId $env:USERNAME met RunLevel Highest
+    - Alle user-folder cleanup functies (Temp, Downloads, Documenten, Afbeeldingen, 
+      Video's, Muziek) gebruiken de mappen van de ingelogde gebruiker
+    - Desktop-snelkoppeling wordt geplaatst op het bureaublad van de ingelogde gebruiker
+    
     AVG-COMPLIANCE:
     - Minimale logging van persoonsgegevens (geen usernames, netwerknamen)
     - Automatische logretentie van 30 dagen
@@ -16,13 +23,14 @@
 .NOTES
     Auteur: Ruben Draaisma
     Datum: 2025-10-23
-    VERSIE: 1.5.0
-    Laatste wijziging: 2025-10-23 (yyyy-mm-dd)
+    VERSIE: 1.6.0
+    Laatste wijziging: 2025-11-03 (yyyy-mm-dd)
     AVG-conform: Minimale logging van persoonsgegevens, 30 dagen retentie
+    Volledig configureerbaar: Alle opschoonacties kunnen in/uitgeschakeld worden
        
 .EXAMPLE
     .\opstart-script.ps1
-    Voert volledige opschoning uit met standaard instellingen
+    Voert volledige opschoning uit met huidige instellingen
 #>
 
 param(
@@ -30,42 +38,110 @@ param(
 )
 
 #region Configuratie
-[string]$HiddenFolderName   = 'HiddenScripts'
-[string]$TaskName           = 'Opstart-Script'
-[string[]]$AllowedWiFi      = @('uw-wifi')
-[string[]]$BrowserList      = @('msedge','firefox','chrome')
-[string]$LogFileName        = 'script.log'
-[int]  $MaxLogSizeMB        = 5
-[string]$EventSource        = 'OpstartScript'
-[bool] $EnableShortcut      = $true      # Snelkoppeling maken ja/nee (true/false)
-[bool] $EnableStartupTask   = $true      # Opstarttaak registreren ja/nee (true/false)
-[bool] $EnableFirewallReset = $true      # Firewall resetten ja/nee (true/false)
-[string]$ScriptVersion      = '1.5.0'    # Huidige scriptversie
-[bool] $ForceUpdate         = $false     # Forceer update van bestaand script
-[int]  $MaxRetries          = 3          # Maximaal aantal herhaalpogingen bij fouten
-[int]  $MaxExecutionMinutes = 5          # Maximale uitvoeringstijd (conform ontwerp)
+# ============================================================================
+# CONFIGURATIE INSTRUCTIES
+# ============================================================================
+# 
+# BELANGRIJK bij het aanpassen van array-waarden:
+# - Gebruik ALTIJD quotes rond strings: @('waarde1', 'waarde2')
+# - Browsers: Procesnamen zonder .exe: @('msedge', 'chrome', 'firefox')
+# - WiFi netwerken: SSID namen met quotes: @('kantoor-wifi', 'gast-netwerk')
+# - Lege array betekent "alles": @() = alle WiFi netwerken verwijderen
+#
+# Voorbeelden:
+#   [string[]]$AllowedWiFi = @()                          # Alle WiFi verwijderen
+#   [string[]]$AllowedWiFi = @('kantoor-wifi')            # 1 netwerk behouden
+#   [string[]]$AllowedWiFi = @('wifi-1', 'wifi-2')        # 2 netwerken behouden
+#
+# ============================================================================
+# BASIS INSTELLINGEN
+# ============================================================================
+[string]$HiddenFolderName   = 'LeenlaptopSchoonmaak'  # Mapnaam in C:\ProgramData
+[string]$TaskName           = 'LeenlaptopSchoonmaak'  # Naam van scheduled task
+[string]$LogFileName        = 'log.txt'               # Naam van logbestand
+[string]$EventSource        = 'LeenlaptopSchoonmaak'  # Event Log bron
+[string]$ScriptVersion      = '1.6.0'                 # Huidige scriptversie
+
+# ============================================================================
+# VOORZIENINGEN (wat wordt geïnstalleerd)
+# ============================================================================
+[bool] $EnableShortcut      = $true      # Snelkoppeling op bureaublad maken
+[bool] $EnableStartupTask   = $true      # Geplande taak bij opstart registreren
+
+# ============================================================================
+# OPSCHONING (wat wordt opgeschoond)
+# ============================================================================
+[bool] $EnableBrowserCleanup = $true     # Browsers stoppen en data wissen
+[string[]]$BrowserList      = @('msedge','firefox','chrome')  # Welke browsers (procesnamen zonder .exe)
+
+[bool] $EnableWiFiCleanup   = $true      # Wi-Fi profielen opschonen
+[string[]]$AllowedWiFi      = @()        # Toegestane netwerken (leeg = alles verwijderen)
+                                         # Voorbeeld met netwerken: @('kantoor-wifi', 'gast-netwerk')
+
+[bool] $EnableTempCleanup   = $true      # Temp-bestanden verwijderen (%TEMP%)
+
+[bool] $EnableDownloadsCleanup = $true   # Downloads-map opschonen (>7 dagen)
+[int]  $DownloadsMaxAgeDays = 7          # Bestanden ouder dan X dagen
+
+[bool] $EnableDocumentsCleanup = $false  # Documenten-map opschonen - VOORZICHTIG!
+[int]  $DocumentsMaxAgeDays = 30         # Bestanden ouder dan X dagen
+
+[bool] $EnablePicturesCleanup = $false   # Afbeeldingen-map opschonen - VOORZICHTIG!
+[int]  $PicturesMaxAgeDays  = 30         # Bestanden ouder dan X dagen
+
+[bool] $EnableVideosCleanup = $false     # Video's-map opschonen - VOORZICHTIG!
+[int]  $VideosMaxAgeDays    = 30         # Bestanden ouder dan X dagen
+
+[bool] $EnableMusicCleanup  = $false     # Muziek-map opschonen - VOORZICHTIG!
+[int]  $MusicMaxAgeDays     = 30         # Bestanden ouder dan X dagen
+
+[bool] $EnableFirewallReset = $true      # Firewall naar standaardinstellingen resetten
+
+[bool] $EnableBackupCleanup = $true      # Oude backups verwijderen (niet geïmplementeerd)
+
+# ============================================================================
+# GEAVANCEERDE INSTELLINGEN
+# ============================================================================
+[int]  $MaxLogSizeMB        = 5          # Maximale logbestand grootte
 [int]  $LogRetentionDays    = 30         # AVG: Logretentie in dagen
+[int]  $MaxRetries          = 3          # Maximaal aantal herhaalpogingen bij fouten
+[int]  $MaxExecutionMinutes = 5          # Maximale uitvoeringstijd
+[bool] $ForceUpdate         = $false     # Forceer update van bestaand script
 #endregion
 
 if ($PrintConfig) {
     # Geef configuratie terug in een formaat dat de batchfile direct kan inlezen (set VAR=...)
     $cfg = [ordered]@{
-        HiddenFolderName    = $HiddenFolderName
-        TaskName            = $TaskName
-        AllowedWiFi         = ($AllowedWiFi -join ',')
-        BrowserList         = ($BrowserList -join ',')
-        LogFileName         = $LogFileName
-        MaxLogSizeMB        = $MaxLogSizeMB
-        EventSource         = $EventSource
-        EnableShortcut      = $EnableShortcut
-        EnableStartupTask   = $EnableStartupTask
-        EnableFirewallReset = $EnableFirewallReset
-        ScriptVersion       = $ScriptVersion
-        ForceUpdate         = $ForceUpdate
-        MaxRetries          = $MaxRetries
-        MaxExecutionMinutes = $MaxExecutionMinutes
-        LogRetentionDays    = $LogRetentionDays
-        HiddenFolderPath    = (Join-Path $env:LOCALAPPDATA $HiddenFolderName)
+        HiddenFolderName       = $HiddenFolderName
+        TaskName               = $TaskName
+        LogFileName            = $LogFileName
+        EventSource            = $EventSource
+        ScriptVersion          = $ScriptVersion
+        AllowedWiFi            = ($AllowedWiFi -join ',')
+        BrowserList            = ($BrowserList -join ',')
+        EnableShortcut         = $EnableShortcut
+        EnableStartupTask      = $EnableStartupTask
+        EnableBrowserCleanup   = $EnableBrowserCleanup
+        EnableWiFiCleanup      = $EnableWiFiCleanup
+        EnableTempCleanup      = $EnableTempCleanup
+        EnableDownloadsCleanup = $EnableDownloadsCleanup
+        EnableDocumentsCleanup = $EnableDocumentsCleanup
+        EnablePicturesCleanup  = $EnablePicturesCleanup
+        EnableVideosCleanup    = $EnableVideosCleanup
+        EnableMusicCleanup     = $EnableMusicCleanup
+        EnableFirewallReset    = $EnableFirewallReset
+        EnableBackupCleanup    = $EnableBackupCleanup
+        DownloadsMaxAgeDays    = $DownloadsMaxAgeDays
+        DocumentsMaxAgeDays    = $DocumentsMaxAgeDays
+        PicturesMaxAgeDays     = $PicturesMaxAgeDays
+        VideosMaxAgeDays       = $VideosMaxAgeDays
+        MusicMaxAgeDays        = $MusicMaxAgeDays
+        MaxLogSizeMB           = $MaxLogSizeMB
+        LogRetentionDays       = $LogRetentionDays
+        MaxRetries             = $MaxRetries
+        MaxExecutionMinutes    = $MaxExecutionMinutes
+        ForceUpdate            = $ForceUpdate
+        HiddenFolderPath       = "C:\ProgramData\$HiddenFolderName"
     }
 
     foreach ($k in $cfg.Keys) {
@@ -75,25 +151,89 @@ if ($PrintConfig) {
     exit 0
 }
 
+function Test-IsAdmin {
+    <#
+    .SYNOPSIS
+    Controleert of het script met administrator-rechten draait.
+    #>
+    try {
+        $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
+        $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
+        return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch {
+        return $false
+    }
+}
+
 function Initialize-Environment {
     try {
-        $global:HiddenFolderPath = Join-Path $env:LOCALAPPDATA $HiddenFolderName
+        # Migratie van 1.5.0 naar 1.6.0: verplaats van LOCALAPPDATA naar ProgramData
+        $oldPath = Join-Path $env:LOCALAPPDATA 'HiddenScripts'
+        $global:HiddenFolderPath = "C:\ProgramData\$HiddenFolderName"
+        
+        if ((Test-Path $oldPath) -and -not (Test-Path $HiddenFolderPath)) {
+            Write-Host "[MIGRATIE] Verplaats installatie van 1.5.0 naar 1.6.0..." -ForegroundColor Yellow
+            try {
+                # Kopieer oude bestanden naar nieuwe locatie
+                New-Item -Path $HiddenFolderPath -ItemType Directory -Force | Out-Null
+                Copy-Item -Path "$oldPath\*" -Destination $HiddenFolderPath -Recurse -Force -ErrorAction SilentlyContinue
+                
+                # Verwijder oude scheduled task (oude naam)
+                $oldTaskName = 'Opstart-Script'
+                if (Get-ScheduledTask -TaskName $oldTaskName -ErrorAction SilentlyContinue) {
+                    Unregister-ScheduledTask -TaskName $oldTaskName -Confirm:$false -ErrorAction SilentlyContinue
+                    Write-Host "[MIGRATIE] Oude scheduled task '$oldTaskName' verwijderd" -ForegroundColor Yellow
+                }
+                
+                # Verwijder oude map (optioneel, alleen als leeg)
+                try {
+                    Remove-Item $oldPath -Recurse -Force -ErrorAction SilentlyContinue
+                    Write-Host "[MIGRATIE] Oude installatie opgeruimd: $oldPath" -ForegroundColor Green
+                } catch {
+                    Write-Warning "[MIGRATIE] Kon oude map niet verwijderen (niet kritiek): $oldPath"
+                }
+                
+                Write-Host "[MIGRATIE] Migratie voltooid naar: $HiddenFolderPath" -ForegroundColor Green
+            } catch {
+                Write-Warning "[MIGRATIE] Fout bij migratie, nieuwe installatie wordt aangemaakt: $($_.Exception.Message)"
+            }
+        }
+        
+        # Maak nieuwe map aan als deze niet bestaat
         if (-not (Test-Path $HiddenFolderPath)) {
             New-Item -Path $HiddenFolderPath -ItemType Directory -Force | Out-Null
         }
+        
         # Stel verborgen attribuut in voor extra veiligheid
         $folder = Get-Item $HiddenFolderPath -Force
         $folder.Attributes = $folder.Attributes -bor [System.IO.FileAttributes]::Hidden
         
         $global:LogFile = Join-Path $HiddenFolderPath $LogFileName
         $global:VersionFile = Join-Path $HiddenFolderPath 'version.txt'
+        
+        # Detecteer admin-rechten en sla op
+        $global:IsAdmin = Test-IsAdmin
 
         # Event source registreren (vereist admin rechten)
-        if (-not [System.Diagnostics.EventLog]::SourceExists($EventSource)) {
-            try {
-                New-EventLog -LogName Application -Source $EventSource
-            } catch {
-                Write-Warning "Kan Event Log source niet registreren: $($_.Exception.Message)"
+        if ($IsAdmin) {
+            # Migratie: verwijder oude event source
+            $oldEventSource = 'OpstartScript'
+            if ([System.Diagnostics.EventLog]::SourceExists($oldEventSource)) {
+                try {
+                    Remove-EventLog -Source $oldEventSource -ErrorAction SilentlyContinue
+                    Write-Host "[MIGRATIE] Oude Event Log source '$oldEventSource' verwijderd" -ForegroundColor Yellow
+                } catch {
+                    # Niet kritiek
+                }
+            }
+            
+            # Registreer nieuwe event source
+            if (-not [System.Diagnostics.EventLog]::SourceExists($EventSource)) {
+                try {
+                    New-EventLog -LogName Application -Source $EventSource
+                } catch {
+                    Write-Warning "Kan Event Log source niet registreren: $($_.Exception.Message)"
+                }
             }
         }
     } catch {
@@ -271,7 +411,6 @@ function Clear-ChromeData {
     }
 
     Write-Log -Message 'Start Chrome data opruimen'
-    # Voor elke profielmap (Default, Profile X, Guest Profile, enz.)
     Get-ChildItem -Path $ProfileRoot -Directory |
         Where-Object Name -match '^(Default|Profile\d+|Guest Profile)$' |
         ForEach-Object {
@@ -293,19 +432,22 @@ function Clear-ChromeData {
 }
 
 function Clear-WiFiProfiles {
+    if (-not $IsAdmin) {
+        Write-Log -Message 'Wi-Fi opschoning overgeslagen: vereist administrator-rechten' -Level 'WARN'
+        return 'no-admin'
+    }
+    
     Write-Log -Message 'Start Wi-Fi profiel opschoning'
 
-    # 1) Haal alle profielen op
     $profiles = netsh wlan show profiles 2>$null |
         Where-Object { $_ -match '^\s*All User Profile\s*:' } |
         ForEach-Object { ($_ -split ':' ,2)[1].Trim() }
 
     if (-not $profiles) {
         Write-Log -Message 'Geen Wi-Fi-profielen gevonden, opschoning overgeslagen'
-        return
+        return 'no-profiles'
     }
 
-    # 2) Verwijder elk ongewenst profiel (AVG: log geen netwerknamen in detail)
     $removedCount = 0
     $keptCount = 0
     foreach ($wifiProfile in $profiles) {
@@ -324,14 +466,181 @@ function Clear-WiFiProfiles {
     }
 
     Write-Log -Message "Wi-Fi opschoning voltooid: $removedCount verwijderd, $keptCount behouden"
+    return @{ Removed = $removedCount; Kept = $keptCount }
 }
 
 function Clear-TempFiles {
     try {
+        # Gebruikt de Temp-map van de INGELOGDE gebruiker (%TEMP%)
+        # Bij scheduled task = de gebruiker die is ingelogd (via -UserId in task principal)
+        $itemCount = (Get-ChildItem "$env:TEMP" -ErrorAction SilentlyContinue | Measure-Object).Count
+        if ($itemCount -eq 0) {
+            Write-Log -Message 'Temp-map is al leeg'
+            return 0
+        }
         Remove-Item "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Log -Message 'Temp-bestanden verwijderd'
+        Write-Log -Message "Temp-bestanden verwijderd (ongeveer $itemCount items)"
+        return $itemCount
     } catch {
         Write-Log -Message "Fout bij verwijderen temp: $($_.Exception.Message)" -Level 'WARN'
+        return -1
+    }
+}
+
+function Clear-DownloadsFolder {
+    try {
+        # Gebruikt de Downloads-map van de INGELOGDE gebruiker
+        # Bij scheduled task = de gebruiker die is ingelogd (via -UserId in task principal)
+        # Gebruik Shell.Application COM object voor betrouwbare Downloads pad
+        $shell = New-Object -ComObject Shell.Application
+        $downloadsPath = $shell.NameSpace('shell:Downloads').Self.Path
+        
+        if (-not $downloadsPath -or -not (Test-Path $downloadsPath)) {
+            Write-Log -Message 'Downloads-map niet gevonden'
+            return 0
+        }
+        
+        # Filter op leeftijd (alleen bestanden ouder dan X dagen)
+        $cutoffDate = (Get-Date).AddDays(-$DownloadsMaxAgeDays)
+        $oldItems = Get-ChildItem $downloadsPath -Recurse -ErrorAction SilentlyContinue | 
+                    Where-Object { $_.LastWriteTime -lt $cutoffDate }
+        
+        $itemCount = ($oldItems | Measure-Object).Count
+        if ($itemCount -eq 0) {
+            Write-Log -Message "Downloads-map: geen bestanden ouder dan $DownloadsMaxAgeDays dagen"
+            return 0
+        }
+        
+        $oldItems | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Log -Message "Downloads-map opgeschoond: $itemCount items verwijderd (ouder dan $DownloadsMaxAgeDays dagen)"
+        return $itemCount
+    } catch {
+        Write-Log -Message "Fout bij opschonen Downloads: $($_.Exception.Message)" -Level 'WARN'
+        return -1
+    }
+}
+
+function Clear-DocumentsFolder {
+    try {
+        # Gebruikt de Documenten-map van de INGELOGDE gebruiker
+        # Bij scheduled task = de gebruiker die is ingelogd (via -UserId in task principal)
+        $documentsPath = [Environment]::GetFolderPath('MyDocuments')
+        if (-not (Test-Path $documentsPath)) {
+            Write-Log -Message 'Documenten-map niet gevonden'
+            return 0
+        }
+        
+        # Filter op leeftijd (alleen bestanden ouder dan X dagen)
+        $cutoffDate = (Get-Date).AddDays(-$DocumentsMaxAgeDays)
+        $oldItems = Get-ChildItem $documentsPath -Recurse -ErrorAction SilentlyContinue | 
+                    Where-Object { $_.LastWriteTime -lt $cutoffDate }
+        
+        $itemCount = ($oldItems | Measure-Object).Count
+        if ($itemCount -eq 0) {
+            Write-Log -Message "Documenten-map: geen bestanden ouder dan $DocumentsMaxAgeDays dagen"
+            return 0
+        }
+        
+        Write-Log -Message "WAARSCHUWING: Documenten-map wordt opgeschoond: $itemCount items (ouder dan $DocumentsMaxAgeDays dagen)" -Level 'WARN'
+        $oldItems | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Log -Message "Documenten-map opgeschoond: $itemCount items verwijderd"
+        return $itemCount
+    } catch {
+        Write-Log -Message "Fout bij opschonen Documenten: $($_.Exception.Message)" -Level 'WARN'
+        return -1
+    }
+}
+
+function Clear-PicturesFolder {
+    try {
+        # Gebruikt de Afbeeldingen-map van de INGELOGDE gebruiker
+        # Bij scheduled task = de gebruiker die is ingelogd (via -UserId in task principal)
+        $picturesPath = [Environment]::GetFolderPath('MyPictures')
+        if (-not (Test-Path $picturesPath)) {
+            Write-Log -Message 'Afbeeldingen-map niet gevonden'
+            return 0
+        }
+        
+        # Filter op leeftijd (alleen bestanden ouder dan X dagen)
+        $cutoffDate = (Get-Date).AddDays(-$PicturesMaxAgeDays)
+        $oldItems = Get-ChildItem $picturesPath -Recurse -ErrorAction SilentlyContinue | 
+                    Where-Object { $_.LastWriteTime -lt $cutoffDate }
+        
+        $itemCount = ($oldItems | Measure-Object).Count
+        if ($itemCount -eq 0) {
+            Write-Log -Message "Afbeeldingen-map: geen bestanden ouder dan $PicturesMaxAgeDays dagen"
+            return 0
+        }
+        
+        Write-Log -Message "WAARSCHUWING: Afbeeldingen-map wordt opgeschoond: $itemCount items (ouder dan $PicturesMaxAgeDays dagen)" -Level 'WARN'
+        $oldItems | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Log -Message "Afbeeldingen-map opgeschoond: $itemCount items verwijderd"
+        return $itemCount
+    } catch {
+        Write-Log -Message "Fout bij opschonen Afbeeldingen: $($_.Exception.Message)" -Level 'WARN'
+        return -1
+    }
+}
+
+function Clear-VideosFolder {
+    try {
+        # Gebruikt de Video's-map van de INGELOGDE gebruiker
+        # Bij scheduled task = de gebruiker die is ingelogd (via -UserId in task principal)
+        $videosPath = [Environment]::GetFolderPath('MyVideos')
+        if (-not (Test-Path $videosPath)) {
+            Write-Log -Message 'Video''s-map niet gevonden'
+            return 0
+        }
+        
+        # Filter op leeftijd (alleen bestanden ouder dan X dagen)
+        $cutoffDate = (Get-Date).AddDays(-$VideosMaxAgeDays)
+        $oldItems = Get-ChildItem $videosPath -Recurse -ErrorAction SilentlyContinue | 
+                    Where-Object { $_.LastWriteTime -lt $cutoffDate }
+        
+        $itemCount = ($oldItems | Measure-Object).Count
+        if ($itemCount -eq 0) {
+            Write-Log -Message "Video's-map: geen bestanden ouder dan $VideosMaxAgeDays dagen"
+            return 0
+        }
+        
+        Write-Log -Message "WAARSCHUWING: Video's-map wordt opgeschoond: $itemCount items (ouder dan $VideosMaxAgeDays dagen)" -Level 'WARN'
+        $oldItems | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Log -Message "Video's-map opgeschoond: $itemCount items verwijderd"
+        return $itemCount
+    } catch {
+        Write-Log -Message "Fout bij opschonen Video's: $($_.Exception.Message)" -Level 'WARN'
+        return -1
+    }
+}
+
+function Clear-MusicFolder {
+    try {
+        # Gebruikt de Muziek-map van de INGELOGDE gebruiker
+        # Bij scheduled task = de gebruiker die is ingelogd (via -UserId in task principal)
+        $musicPath = [Environment]::GetFolderPath('MyMusic')
+        if (-not (Test-Path $musicPath)) {
+            Write-Log -Message 'Muziek-map niet gevonden'
+            return 0
+        }
+        
+        # Filter op leeftijd (alleen bestanden ouder dan X dagen)
+        $cutoffDate = (Get-Date).AddDays(-$MusicMaxAgeDays)
+        $oldItems = Get-ChildItem $musicPath -Recurse -ErrorAction SilentlyContinue | 
+                    Where-Object { $_.LastWriteTime -lt $cutoffDate }
+        
+        $itemCount = ($oldItems | Measure-Object).Count
+        if ($itemCount -eq 0) {
+            Write-Log -Message "Muziek-map: geen bestanden ouder dan $MusicMaxAgeDays dagen"
+            return 0
+        }
+        
+        Write-Log -Message "WAARSCHUWING: Muziek-map wordt opgeschoond: $itemCount items (ouder dan $MusicMaxAgeDays dagen)" -Level 'WARN'
+        $oldItems | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Log -Message "Muziek-map opgeschoond: $itemCount items verwijderd"
+        return $itemCount
+    } catch {
+        Write-Log -Message "Fout bij opschonen Muziek: $($_.Exception.Message)" -Level 'WARN'
+        return -1
     }
 }
 
@@ -351,6 +660,11 @@ function Clear-OldBackups {
 }
 
 function Restore-FirewallDefaults {
+    if (-not $IsAdmin) {
+        Write-Log -Message 'Firewall reset overgeslagen: vereist administrator-rechten' -Level 'WARN'
+        return $false
+    }
+    
     try {
         Write-Log -Message 'Reset Windows Firewall naar standaardinstellingen'
 
@@ -405,12 +719,21 @@ function Restore-FirewallDefaults {
 function Set-StartupTask {
     param([string]$ScriptPath)
 
+    if (-not $IsAdmin -and $EnableStartupTask) {
+        Write-Log -Message 'Geplande taak overgeslagen: vereist administrator-rechten voor installatie' -Level 'WARN'
+        return 'no-admin'
+    }
+
     try {
-        # 1) Bestaande taak ophalen
         $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 
         if ($EnableStartupTask) {
             # 2) Taak aanmaken of bijwerken
+            # BELANGRIJK: Taak draait onder de HUIDIGE gebruiker ($env:USERNAME)
+            # Dit zorgt ervoor dat:
+            # - User-mappen van de JUISTE gebruiker worden opgeschoond (Downloads, Documents, etc.)
+            # - %TEMP%, %LOCALAPPDATA% van de juiste gebruiker worden gebruikt
+            # - RunLevel Highest geeft admin-rechten voor WiFi/Firewall/etc.
             $action    = New-ScheduledTaskAction -Execute 'powershell.exe' `
                             -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ScriptPath`""
             $trigger   = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
@@ -455,42 +778,134 @@ function Set-StartupTask {
     }
 }
 
+function Get-ActualUserDesktop {
+    <#
+    .SYNOPSIS
+    Vindt de desktop van de daadwerkelijk ingelogde gebruiker, zelfs als script als admin draait.
+    
+    .DESCRIPTION
+    Probeert meerdere methodes om de echte gebruiker te vinden:
+    1. Query actieve console sessies (quser/qwinsta)
+    2. Win32_ComputerSystem via Get-CimInstance (laatst ingelogde gebruiker)
+    3. Fallback naar %PUBLIC%\Desktop voor alle gebruikers
+    
+    WINDOWS 11 25H2 COMPATIBLE: Gebruikt Get-CimInstance ipv deprecated Get-WmiObject/WMIC
+    AVG-COMPLIANT: Logt geen usernames, alleen detectiemethode
+    #>
+    
+    # Methode 1: Zoek actieve console gebruiker via quser/query user
+    try {
+        $quser = query user 2>$null | Select-Object -Skip 1
+        foreach ($line in $quser) {
+            # Parse quser output: USERNAME SESSIONNAME ID STATE IDLE TIME LOGON TIME
+            if ($line -match '^\s*(\S+)\s+console') {
+                $userName = $Matches[1].Trim()
+                $userProfile = Join-Path 'C:\Users' $userName
+                $testDesktop = Join-Path $userProfile 'Desktop'
+                if (Test-Path $testDesktop) {
+                    # AVG: Log alleen methode, geen username
+                    Write-Log -Message "Desktop bepaald via actieve console sessie" -SkipEventLog
+                    return $testDesktop
+                }
+            }
+        }
+    } catch {
+        # Stille fout - probeer volgende methode
+    }
+    
+    # Methode 2: Win32_ComputerSystem (laatst ingelogde)
+    # Gebruikt Get-CimInstance (modern, Windows 11 25H2 compatible - WMIC is verwijderd)
+    try {
+        $computerSystem = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
+        $loggedOnUser = $computerSystem.UserName
+        if ($loggedOnUser) {
+            # Parse DOMAIN\Username of COMPUTERNAME\Username
+            if ($loggedOnUser -match '[\\/](.+)$') {
+                $userName = $Matches[1]
+            } else {
+                $userName = $loggedOnUser
+            }
+            
+            $userProfile = Join-Path 'C:\Users' $userName
+            $testDesktop = Join-Path $userProfile 'Desktop'
+            if (Test-Path $testDesktop) {
+                # AVG: Log alleen methode, geen username
+                Write-Log -Message "Desktop bepaald via CIM (laatst ingelogde gebruiker)" -SkipEventLog
+                return $testDesktop
+            }
+        }
+    } catch {
+        # Stille fout - probeer volgende methode
+    }
+    
+    # Methode 3: Fallback naar Public Desktop (voor ALLE gebruikers zichtbaar)
+    $publicDesktop = [Environment]::GetFolderPath('CommonDesktopDirectory')
+    if (Test-Path $publicDesktop) {
+        Write-Log -Message "Desktop bepaald via Public Desktop (alle gebruikers)" -SkipEventLog
+        return $publicDesktop
+    }
+    
+    # Laatste noodgreep: huidige sessie desktop
+    $currentDesktop = [Environment]::GetFolderPath('Desktop')
+    Write-Log -Message "Desktop fallback naar huidige sessie" -Level 'WARN'
+    return $currentDesktop
+}
+
 function Set-DesktopShortcut {
     param(
-        [string]$ShortcutName = 'Terug naar start.lnk',
+        [string]$ShortcutName = 'Leenlaptop Opschonen.lnk',
         [string]$TargetScriptPath  # Vul in bij aanroep: de $destPath uit Copy-ScriptToHidden
     )
 
-    # 1) Bepaal paden
-    $desktop = [Environment]::GetFolderPath('Desktop')
+    $desktop = Get-ActualUserDesktop
     $linkPath = Join-Path $desktop $ShortcutName
+    
+    # Migratie v1.5.0 → v1.6.0: verwijder oude snelkoppelingen
+    $oldShortcutNames = @('Terug naar start.lnk', 'Laptop Opschonen.lnk')
+    foreach ($oldName in $oldShortcutNames) {
+        $oldPath = Join-Path $desktop $oldName
+        if (Test-Path $oldPath) {
+            try {
+                Remove-Item $oldPath -Force -ErrorAction SilentlyContinue
+                Write-Host "[MIGRATIE] Oude snelkoppeling verwijderd: $oldName" -ForegroundColor Yellow
+            } catch {
+                Write-Warning "[MIGRATIE] Kon oude snelkoppeling niet verwijderen: $oldName"
+            }
+        }
+    }
 
     try {
         if ($EnableShortcut) {
             $exists = Test-Path $linkPath
 
-            # 2) Maak WScript.Shell COM-object
             $shell = New-Object -ComObject WScript.Shell
             $shortcut = $shell.CreateShortcut($linkPath)
 
-            # 3) Instellingen voor de snelkoppeling (twee paden):
             if ($EnableStartupTask) {
-                # a) Met geplande taak: start de taak (elevated, geen UAC prompt)
-                $shortcut.TargetPath = 'schtasks.exe'
-                $shortcut.Arguments  = "/Run /TN `"$TaskName`""
-                $shortcut.WorkingDirectory = $env:SystemRoot
-                Write-Log -Message "Snelkoppeling start geplande taak: $TaskName"
+                $taskExists = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+                
+                if ($taskExists) {
+                    # Via scheduled task: geen UAC prompt (taak heeft RunLevel Highest)
+                    $shortcut.TargetPath = 'schtasks.exe'
+                    $shortcut.Arguments  = "/Run /TN `"$TaskName`""
+                    $shortcut.WorkingDirectory = $env:SystemRoot
+                    Write-Log -Message "Snelkoppeling start geplande taak: $TaskName (elevated, geen UAC)"
+                } else {
+                    # Fallback: directe PowerShell start met UAC prompt
+                    $shortcut.TargetPath = 'powershell.exe'
+                    $shortcut.Arguments  = ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Process -Verb RunAs -WindowStyle Hidden -FilePath ''powershell.exe'' -ArgumentList ''-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{0}""''"' -f $TargetScriptPath)
+                    $shortcut.WorkingDirectory = Split-Path $TargetScriptPath
+                    Write-Log -Message "Snelkoppeling start script met UAC (taak niet gevonden, gebruiker moet admin zijn)" -Level 'WARN'
+                }
             } else {
-                # b) Zonder geplande taak: self-elevate via Start-Process -Verb RunAs (toont UAC prompt)
+                # Zonder scheduled task: directe PowerShell start met UAC prompt
                 $shortcut.TargetPath = 'powershell.exe'
                 $shortcut.Arguments  = ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Process -Verb RunAs -WindowStyle Hidden -FilePath ''powershell.exe'' -ArgumentList ''-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{0}""''"' -f $TargetScriptPath)
                 $shortcut.WorkingDirectory = Split-Path $TargetScriptPath
-                Write-Log -Message "Snelkoppeling start script met UAC elevatie: $TargetScriptPath"
+                Write-Log -Message "Snelkoppeling start script met UAC elevatie (geplande taak uitgeschakeld)"
             }
-            # Optioneel: stel een icon in, bv. PowerShell-icoon
             $shortcut.IconLocation = 'powershell.exe,0'
 
-            # 4) Opslaan (bijwerken of aanmaken)
             $shortcut.Save()
             if ($exists) {
                 Write-Log -Message "Snelkoppeling bijgewerkt: $linkPath"
@@ -627,6 +1042,22 @@ try {
     Initialize-Environment
     Write-Log -Message "START opschoning leenlaptop (versie $ScriptVersion)"
     
+    if (-not $IsAdmin) {
+        $adminWarning = @"
+WAARSCHUWING: Script draait NIET als administrator!
+Sommige functies worden overgeslagen:
+- Wi-Fi profiel verwijdering (vereist admin)
+- Firewall reset (vereist admin)
+- Geplande taak registratie (vereist admin)
+
+Voor volledige functionaliteit: Start als administrator
+"@
+        Write-Log -Message $adminWarning -Level 'WARN'
+        Write-Host $adminWarning -ForegroundColor Yellow
+    } else {
+        Write-Log -Message "Script draait met administrator-rechten - volledige functionaliteit beschikbaar"
+    }
+    
     # Timeout mechanisme (conform ontwerp: max 5 minuten)
     $timeoutJob = Start-Job -ScriptBlock {
         param($MaxMinutes)
@@ -636,37 +1067,141 @@ try {
     try {
         $destPath = Copy-ScriptToHidden
         
-        # Opschonen met retry-logica voor kritieke operaties - alleen browsers in de lijst
-        Invoke-WithRetry -ScriptBlock { Stop-Browsers } -OperationName "Browser stoppen"
-        
-        # Alleen browser data wissen voor browsers in de $BrowserList
-        if ($BrowserList -contains 'msedge') {
-            Invoke-WithRetry -ScriptBlock { Clear-EdgeData } -OperationName "Edge data wissen"
-        }
-        if ($BrowserList -contains 'firefox') {
-            Invoke-WithRetry -ScriptBlock { Clear-FirefoxData } -OperationName "Firefox data wissen"
-        }
-        if ($BrowserList -contains 'chrome') {
-            Invoke-WithRetry -ScriptBlock { Clear-ChromeData } -OperationName "Chrome data wissen"
-        }
-        
-        # Noteer resultaat voor statusoverzicht
-        if ($BrowserList -and $BrowserList.Count -gt 0) {
+        # Browser opschoning (indien ingeschakeld)
+        if ($EnableBrowserCleanup -and $BrowserList -and $BrowserList.Count -gt 0) {
+            # Stop browsers met retry-logica
+            Invoke-WithRetry -ScriptBlock { Stop-Browsers } -OperationName "Browser stoppen"
+            
+            # Wis browser data per browser in de lijst
+            if ($BrowserList -contains 'msedge') {
+                Invoke-WithRetry -ScriptBlock { Clear-EdgeData } -OperationName "Edge data wissen"
+            }
+            if ($BrowserList -contains 'firefox') {
+                Invoke-WithRetry -ScriptBlock { Clear-FirefoxData } -OperationName "Firefox data wissen"
+            }
+            if ($BrowserList -contains 'chrome') {
+                Invoke-WithRetry -ScriptBlock { Clear-ChromeData } -OperationName "Chrome data wissen"
+            }
+            
+            # Noteer resultaat
             $completedSteps += ("Browsers gestopt en data verwijderd ({0})" -f (($BrowserList | Sort-Object) -join ', '))
+        } elseif ($EnableBrowserCleanup -and (-not $BrowserList -or $BrowserList.Count -eq 0)) {
+            $skippedSteps += 'Browser opschoning (geen browsers in BrowserList)'
         } else {
-            $skippedSteps += 'Browser opschoning (geen browsers geconfigureerd)'
+            $skippedSteps += 'Browser opschoning (uitgeschakeld in configuratie)'
         }
         
-        Clear-WiFiProfiles  
-        Clear-TempFiles     
-        Clear-OldBackups    
-        # Noteer resultaten
-        if ($AllowedWiFi -and $AllowedWiFi.Count -gt 0) {
-            $completedSteps += 'Wi-Fi profielen gefilterd (whitelist actief)'
+        # Wi-Fi profielen (indien ingeschakeld)
+        if ($EnableWiFiCleanup) {
+            $wifiResult = Clear-WiFiProfiles
+            if ($wifiResult -eq 'no-admin') {
+                $skippedSteps += 'Wi-Fi profielen (geen admin-rechten)'
+            } elseif ($wifiResult -eq 'no-profiles') {
+                $skippedSteps += 'Wi-Fi profielen (geen profielen gevonden)'
+            } elseif ($wifiResult -is [hashtable]) {
+                if ($wifiResult.Removed -eq 0 -and $wifiResult.Kept -eq 0) {
+                    $skippedSteps += 'Wi-Fi profielen (geen actie nodig)'
+                } elseif ($wifiResult.Removed -gt 0) {
+                    $completedSteps += "Wi-Fi profielen opgeschoond ($($wifiResult.Removed) verwijderd, $($wifiResult.Kept) behouden)"
+                } else {
+                    $completedSteps += "Wi-Fi profielen behouden ($($wifiResult.Kept) via whitelist)"
+                }
+            }
         } else {
-            $completedSteps += 'Wi-Fi profielen opgeschoond'
+            $skippedSteps += 'Wi-Fi profielen (uitgeschakeld in configuratie)'
         }
-        $completedSteps += 'Tijdelijke bestanden opgeschoond'
+        
+        # Temp bestanden
+        if ($EnableTempCleanup) {
+            $tempCount = Clear-TempFiles
+            if ($tempCount -gt 0) {
+                $completedSteps += "Tijdelijke bestanden opgeschoond (ongeveer $tempCount items)"
+            } elseif ($tempCount -eq 0) {
+                $skippedSteps += 'Tijdelijke bestanden (map was al leeg)'
+            } else {
+                $skippedSteps += 'Tijdelijke bestanden (fout bij opschonen)'
+            }
+        } else {
+            $skippedSteps += 'Tijdelijke bestanden (uitgeschakeld in configuratie)'
+        }
+        
+        # Downloads map
+        if ($EnableDownloadsCleanup) {
+            $dlCount = Clear-DownloadsFolder
+            if ($dlCount -gt 0) {
+                $completedSteps += "Downloads-map geleegd ($dlCount items verwijderd)"
+            } elseif ($dlCount -eq 0) {
+                $skippedSteps += 'Downloads-map (was al leeg)'
+            } else {
+                $skippedSteps += 'Downloads-map (fout bij opschonen)'
+            }
+        } else {
+            $skippedSteps += 'Downloads-map (uitgeschakeld in configuratie)'
+        }
+        
+        # Documenten map (VOORZICHTIG!)
+        if ($EnableDocumentsCleanup) {
+            $docCount = Clear-DocumentsFolder
+            if ($docCount -gt 0) {
+                $completedSteps += "Documenten-map geleegd ($docCount items verwijderd)"
+            } elseif ($docCount -eq 0) {
+                $skippedSteps += 'Documenten-map (was al leeg)'
+            } else {
+                $skippedSteps += 'Documenten-map (fout bij opschonen)'
+            }
+        } else {
+            $skippedSteps += 'Documenten-map (uitgeschakeld in configuratie)'
+        }
+        
+        # Afbeeldingen map (VOORZICHTIG!)
+        if ($EnablePicturesCleanup) {
+            $picCount = Clear-PicturesFolder
+            if ($picCount -gt 0) {
+                $completedSteps += "Afbeeldingen-map geleegd ($picCount items verwijderd)"
+            } elseif ($picCount -eq 0) {
+                $skippedSteps += 'Afbeeldingen-map (was al leeg)'
+            } else {
+                $skippedSteps += 'Afbeeldingen-map (fout bij opschonen)'
+            }
+        } else {
+            $skippedSteps += 'Afbeeldingen-map (uitgeschakeld in configuratie)'
+        }
+        
+        # Video's map (VOORZICHTIG!)
+        if ($EnableVideosCleanup) {
+            $vidCount = Clear-VideosFolder
+            if ($vidCount -gt 0) {
+                $completedSteps += "Video's-map geleegd ($vidCount items verwijderd)"
+            } elseif ($vidCount -eq 0) {
+                $skippedSteps += 'Video''s-map (was al leeg)'
+            } else {
+                $skippedSteps += 'Video''s-map (fout bij opschonen)'
+            }
+        } else {
+            $skippedSteps += 'Video''s-map (uitgeschakeld in configuratie)'
+        }
+        
+        # Muziek map (VOORZICHTIG!)
+        if ($EnableMusicCleanup) {
+            $musCount = Clear-MusicFolder
+            if ($musCount -gt 0) {
+                $completedSteps += "Muziek-map geleegd ($musCount items verwijderd)"
+            } elseif ($musCount -eq 0) {
+                $skippedSteps += 'Muziek-map (was al leeg)'
+            } else {
+                $skippedSteps += 'Muziek-map (fout bij opschonen)'
+            }
+        } else {
+            $skippedSteps += 'Muziek-map (uitgeschakeld in configuratie)'
+        }
+        
+        # Oude backups opschonen (indien ingeschakeld)
+        if ($EnableBackupCleanup) {
+            Clear-OldBackups
+            # Functie logt zelf, geen extra status nodig
+        } else {
+            Write-Log -Message "Backup cleanup overgeslagen (uitgeschakeld in configuratie)"
+        }
         
         if ($EnableFirewallReset) {
             $fwOk = Invoke-WithRetry -ScriptBlock { Restore-FirewallDefaults } -OperationName "Firewall reset"
@@ -683,10 +1218,11 @@ try {
         $taskResult = Set-StartupTask -ScriptPath $destPath
         if ($EnableStartupTask) {
             switch ($taskResult) {
-                'created' { $provCompleted += "Geplande taak geregistreerd: $TaskName" }
-                'updated' { $provCompleted += "Geplande taak bijgewerkt: $TaskName" }
-                'error'   { $provSkipped   += "Geplande taak kon niet worden ingesteld: $TaskName" }
-                default   { $provSkipped   += "Geplande taak status onbekend: $TaskName" }
+                'created'  { $provCompleted += "Geplande taak geregistreerd: $TaskName" }
+                'updated'  { $provCompleted += "Geplande taak bijgewerkt: $TaskName" }
+                'no-admin' { $provSkipped   += "Geplande taak (geen admin-rechten)" }
+                'error'    { $provSkipped   += "Geplande taak kon niet worden ingesteld: $TaskName" }
+                default    { $provSkipped   += "Geplande taak status onbekend: $TaskName" }
             }
         } else {
             switch ($taskResult) {
@@ -740,10 +1276,8 @@ try {
     # Bereken totale uitvoeringstijd
     $totalSeconds = ((Get-Date) - $startTime).TotalSeconds
     
-    # Toon duidelijke status voor servicedesk (conform ontwerp: SUCCES/FAIL)
     Show-CompletionStatus -Success $executionSuccessful -ErrorMessage $errorDetails -ExecutionTimeSeconds $totalSeconds -CompletedItems $completedSteps -SkippedItems $skippedSteps -ProvisioningCompleted $provCompleted -ProvisioningSkipped $provSkipped
     
-    # Exit code voor monitoring
     if (-not $executionSuccessful) {
         exit 1
     }

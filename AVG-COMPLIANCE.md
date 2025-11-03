@@ -1,9 +1,9 @@
 # AVG Compliance Documentatie
 ## Leenlaptop Opschoningsscript - Privacy & Gegevensbescherming
 
-**Document versie**: 1.0  
-**Datum**: 23 oktober 2025  
-**Script versie**: 1.5.0  
+**Document versie**: 1.1  
+**Datum**: 3 november 2025  
+**Script versie**: 1.6.0  
 **Verantwoordelijke**: ICT-beheerder
 
 ---
@@ -221,8 +221,57 @@ Get-EventLog -LogName Application -Source "OpstartScript" -Newest 10
 
 | Versie | Datum | Wijziging | AVG Impact |
 |--------|-------|-----------|------------|
-| 1.0 | 2025-10-23 | Initiële AVG-compliance implementatie | Volledig herziening voor privacy |
 | 1.4.1 | 2025-10-03 | Pre-AVG versie | Bevatte PII in logs (niet compliant) |
+| 1.5.0 (Doc 1.0) | 2025-10-23 | Initiële AVG-compliance implementatie | Volledig herziening voor privacy |
+| 1.6.0 (Doc 1.1) | 2025-11-03 | Volledig configureerbare opschoning + media-mappen + desktop detectie | Geen - blijft AVG-compliant |
+
+### Document Versie 1.1 (Script v1.6.0) - AVG Analyse
+**Nieuwe functionaliteit**: 
+1. Desktop snelkoppeling detectie bij admin-sessies
+2. Media-mappen opschoning (Afbeeldingen, Video's, Muziek)
+3. Volledig configureerbare cleanup-opties
+4. Verbeterde Wi-Fi status rapportage
+
+**Privacy Impact Assessment per feature**:
+
+**1. Desktop Detectie (Get-ActualUserDesktop)**
+```powershell
+# ❌ VERMEDEN: Username logging
+# Get-ActualUserDesktop detecteert gebruiker maar logt geen naam
+
+# ✅ GEÏMPLEMENTEERD: Alleen methode logging
+Write-Log "Desktop bepaald via actieve console sessie" -SkipEventLog
+# Geen username, gebruik -SkipEventLog voor extra privacy
+```
+- Detecteert gebruiker via query user/WMI maar logt **GEEN** username
+- Gebruikt `-SkipEventLog` flag voor extra privacy
+- Fallback naar Public Desktop (geen gebruikersspecifieke data)
+
+**2. Media-mappen Opschoning (Pictures/Videos/Music)**
+```powershell
+# ✅ AVG-CONFORM: Alleen aantallen, geen bestandsnamen
+Write-Log "Afbeeldingen-map geleegd (45 items verwijderd)"
+# Geen bestandsnamen of gebruikersspecifieke informatie
+```
+- Logt alleen **aantallen**, geen bestandsnamen of paden
+- WAARSCHUWING melding in log (bevat geen PII)
+- Standaard **uitgeschakeld** (opt-in voor privacy)
+
+**3. Verbeterde Status Rapportage**
+```powershell
+# ✅ AVG-CONFORM: Alleen statistieken
+Write-Log "Wi-Fi opschoning: 3 verwijderd, 1 behouden"
+# Geen netwerknamen, alleen aantallen
+```
+- Wi-Fi rapportage zonder netwerknamen (alleen counts)
+- Browser lijst zonder gebruikersprofielen
+- Alle statistieken geaggregeerd zonder PII
+
+**Conclusie**: Geen AVG-impact. Script blijft volledig compliant.
+- Alle nieuwe functies respecteren privacy-by-design principe
+- Geen PII-logging toegevoegd
+- `-SkipEventLog` gebruikt waar relevant
+- Media-opschoning standaard uitgeschakeld (veilig)
 
 ---
 
@@ -231,7 +280,7 @@ Get-EventLog -LogName Application -Source "OpstartScript" -Newest 10
 **Privacy vragen**: ICT-beheerder  
 **Functionaris Gegevensbescherming**: [Indien van toepassing]  
 **Script auteur**: Ruben Draaisma  
-**Laatste review**: 23 oktober 2025
+**Laatste review**: 3 november 2025
 
 ---
 
