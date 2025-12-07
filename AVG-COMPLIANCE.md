@@ -1,9 +1,9 @@
 # AVG Compliance Documentatie
 ## Leenlaptop Opschoningsscript - Privacy & Gegevensbescherming
 
-**Document versie**: 1.1  
-**Datum**: 3 november 2025  
-**Script versie**: 1.6.0  
+**Document versie**: 1.2  
+**Datum**: 7 december 2025  
+**Script versie**: 1.6.1  
 **Verantwoordelijke**: ICT-beheerder
 
 ---
@@ -224,13 +224,14 @@ Get-EventLog -LogName Application -Source "OpstartScript" -Newest 10
 | 1.4.1 | 2025-10-03 | Pre-AVG versie | Bevatte PII in logs (niet compliant) |
 | 1.5.0 (Doc 1.0) | 2025-10-23 | Initiële AVG-compliance implementatie | Volledig herziening voor privacy |
 | 1.6.0 (Doc 1.1) | 2025-11-03 | Volledig configureerbare opschoning + media-mappen + desktop detectie | Geen - blijft AVG-compliant |
+| 1.6.1 (Doc 1.2) | 2025-12-07 | Hybrid browser cleanup + credentials/sync-data verwijdering | Verbeterd - meer privacy (account data verwijderd) |
 
-### Document Versie 1.1 (Script v1.6.0) - AVG Analyse
+### Document Versie 1.2 (Script v1.6.1) - AVG Analyse
 **Nieuwe functionaliteit**: 
-1. Desktop snelkoppeling detectie bij admin-sessies
-2. Media-mappen opschoning (Afbeeldingen, Video's, Muziek)
-3. Volledig configureerbare cleanup-opties
-4. Verbeterde Wi-Fi status rapportage
+1. Hybrid browser cleanup strategie (volledig profiel verwijderen → granulaire fallback)
+2. Credentials en sync-data verwijdering (Login Data, Preferences, Sync Data)
+3. Firefox Account en Google/Microsoft Account data verwijdering
+4. Verbeterde backup cleanup met statusrapportage
 
 **Privacy Impact Assessment per feature**:
 

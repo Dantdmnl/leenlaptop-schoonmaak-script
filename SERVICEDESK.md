@@ -1,8 +1,8 @@
 # Servicedesk Handleiding - Leenlaptop Schoonmaak Script
 
-> **Versie:** 1.6.0  
+> **Versie:** 1.6.1  
 > **Voor:** Servicedesk medewerkers en ICT-beheerders  
-> **Laatst bijgewerkt:** 3 november 2025
+> **Laatst bijgewerkt:** 7 december 2025
 
 ---
 
@@ -171,9 +171,9 @@ C:\ProgramData\LeenlaptopSchoonmaak\log.txt
 
 ### Voorbeeld log-entries
 ```
-2025-11-03 09:15:23 | INFO | ==================================================
-2025-11-03 09:15:23 | INFO | START Leenlaptop Schoonmaak Script v1.6.0
-2025-11-03 09:15:23 | INFO | ==================================================
+2025-12-07 09:15:23 | INFO | ==================================================
+2025-12-07 09:15:23 | INFO | START Leenlaptop Schoonmaak Script v1.6.1
+2025-12-07 09:15:23 | INFO | ==================================================
 2025-11-03 09:15:24 | SUCCESS | Browsers gesloten: 2 processen
 2025-11-03 09:15:25 | SUCCESS | Browserdata verwijderd voor Chrome
 2025-11-03 09:15:26 | SUCCESS | WiFi-profielen opgeschoond (Removed: 3, Kept: 1)

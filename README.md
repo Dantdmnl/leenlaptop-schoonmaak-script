@@ -3,7 +3,7 @@
 ## Overzicht
 Dit PowerShell-script is ontworpen om de opschoning en herconfiguratie van leenlaptops te automatiseren. Het script zorgt ervoor dat apparaten na terugkomst snel en veilig worden teruggebracht naar een schone, gestandaardiseerde staat zonder persoonlijke data of sessies.
 
-**Versie:** 1.6.0 | **Release datum:** 3 november 2025
+**Versie:** 1.6.1 | **Release datum:** 7 december 2025
 
 ## 📋 Ontwerp & Conformiteit
 Dit script is ontwikkeld conform een professioneel technisch ontwerp en voldoet aan:
@@ -38,25 +38,25 @@ Write-Log "Wi-Fi opschoning: 5 verwijderd, 1 behouden" -SkipEventLog
 ```
 
 ## Belangrijkste functies
-- **🎯 Duidelijke status voor servicedesk**: SUCCES/FAIL melding na elke opschoning
-- **⏱️ Tijdscontrole**: Maximaal 5 minuten uitvoeringstijd (conform ontwerp)
-- **🔄 Automatische migratie**: v1.5.0 → v1.6.0 gebeurt automatisch bij herinstallatie
-- **Intelligente zelfupdate** met automatische versiecontrole en backup-systeem
+- Duidelijke status voor servicedesk: SUCCES/FAIL melding na elke opschoning
+- Tijdscontrole: Maximaal 5 minuten uitvoeringstijd (conform ontwerp)
+- Automatische migratie: v1.5.0 → v1.6.0 gebeurt automatisch bij herinstallatie
+- Intelligente zelfupdate met automatische versiecontrole en backup-systeem
 - Installatie naar `C:\ProgramData\LeenlaptopSchoonmaak` (systeem-breed, ICT-toegankelijk)
-- **🔧 Volledig configureerbaar**: Alle cleanup functies in/uitschakelbaar
+- Volledig configureerbaar: Alle cleanup functies in/uitschakelbaar
 - Sluiten van browsers (Edge, Firefox, Chrome) met retry-mechanisme
 - Verwijderen van browserdata: cache, cookies, sessies en geschiedenis
 - Verwijderen van Wi-Fi-profielen, behalve toegestane netwerken (whitelist)
-- **📁 Slimme folder cleanup**: Alleen oude bestanden (Downloads >7 dagen, rest >30 dagen)
+- Slimme folder cleanup: Alleen oude bestanden (Downloads >7 dagen, rest >30 dagen)
 - Leegmaken van tijdelijke bestanden met configureerbare leeftijd
 - Herstellen van Windows Firewall naar standaardinstellingen
-- **🔐 AVG-compliant**: Minimale PII-logging, automatische 30-dagen retentie
-- **🛡️ Graceful degradation**: Script werkt ook zonder admin-rechten (beperkte functionaliteit)
-- **Automatisch onderhoud**: opschonen van oude backups en logs
-- **Robuuste foutafhandeling** met retry-logica voor kritieke operaties
+- AVG-compliant: Minimale PII-logging, automatische 30-dagen retentie
+- Graceful degradation: Script werkt ook zonder admin-rechten (beperkte functionaliteit)
+- Automatisch onderhoud: opschonen van oude backups en logs
+- Robuuste foutafhandeling met retry-logica voor kritieke operaties
 - Uitgebreide logging naar zowel bestand als Windows Event Log (gefilterd)
-- **Smart configuratie**: Opstarttaak en snelkoppeling met intelligente elevatie
-- **Flexibele deployment**: 10+ configureerbare opties voor verschillende scenario's
+- Smart configuratie: Opstarttaak en snelkoppeling met intelligente elevatie
+- Flexibele deployment: 10+ configureerbare opties voor verschillende scenario's
 
 ## Voorwaarden
 - Windows 10 of hoger (inclusief Windows 11 24H2/25H2)
@@ -163,7 +163,7 @@ Het script is volledig configureerbaar via variabelen in het `#region Configurat
 [int]  $MaxRetries          = 3                   # 🔁 Max herhaalpogingen
 [int]  $MaxExecutionMinutes = 5                   # ⏱️ Max uitvoeringstijd (ontwerp-eis)
 [int]  $LogRetentionDays    = 30                  # 🔐 AVG: Log retentie in dagen
-[string]$ScriptVersion      = '1.6.0'             # 📋 Huidige versie
+[string]$ScriptVersion      = '1.6.1'             # 📋 Huidige versie
 ```
 
 
@@ -197,8 +197,8 @@ Na elke uitvoering toont het script een duidelijke status:
 ===================================================
   OPSCHONING VOLTOOID - APPARAAT KLAAR VOOR UITLEEN
 ===================================================
-Tijdstip: 2025-11-03 14:30:15
-Versie: 1.6.0
+Tijdstip: 2025-12-07 14:30:15
+Versie: 1.6.1
 Uitvoeringstijd: 43.2 seconden
 
 + Browsers gestopt en data verwijderd (chrome, msedge)

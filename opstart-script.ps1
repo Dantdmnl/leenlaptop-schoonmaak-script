@@ -23,8 +23,8 @@
 .NOTES
     Auteur: Ruben Draaisma
     Datum: 2025-10-23
-    VERSIE: 1.6.0
-    Laatste wijziging: 2025-11-03 (yyyy-mm-dd)
+    VERSIE: 1.6.1
+    Laatste wijziging: 2025-12-07 (yyyy-mm-dd)
     AVG-conform: Minimale logging van persoonsgegevens, 30 dagen retentie
     Volledig configureerbaar: Alle opschoonacties kunnen in/uitgeschakeld worden
        
@@ -60,7 +60,7 @@ param(
 [string]$TaskName           = 'LeenlaptopSchoonmaak'  # Naam van scheduled task
 [string]$LogFileName        = 'log.txt'               # Naam van logbestand
 [string]$EventSource        = 'LeenlaptopSchoonmaak'  # Event Log bron
-[string]$ScriptVersion      = '1.6.0'                 # Huidige scriptversie
+[string]$ScriptVersion      = '1.6.1'                 # Huidige scriptversie
 
 # ============================================================================
 # VOORZIENINGEN (wat wordt geïnstalleerd)
@@ -97,7 +97,7 @@ param(
 
 [bool] $EnableFirewallReset = $true      # Firewall naar standaardinstellingen resetten
 
-[bool] $EnableBackupCleanup = $true      # Oude backups verwijderen (niet geïmplementeerd)
+[bool] $EnableBackupCleanup = $true      # Oude script-backups verwijderen (gebruikt LogRetentionDays)
 
 # ============================================================================
 # GEAVANCEERDE INSTELLINGEN
@@ -367,37 +367,120 @@ function Stop-Browsers {
 function Clear-EdgeData {
     $path = Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data'
     if (-not (Test-Path $path)) { return }
+    
+    $profileCount = 0
     Get-ChildItem -Path $path -Directory |
-        Where-Object Name -match '^(Default|Profile\d+)$' |
+        Where-Object Name -match '^(Default|Profile\d+|Guest Profile)$' |
         ForEach-Object {
-            $targets = 'History','Cookies','Cache','Local Storage','Network','Code Cache',
-                       'GPUCache','Session Storage','Top Sites','Visited Links',
-                       'Sessions','Preferences','Local State'
-            foreach ($item in $targets) {
-                $p = Join-Path $_.FullName $item
-                if (Test-Path $p) { Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue }
+            $profilePath = $_.FullName
+            $profileName = $_.Name
+            
+            # STRATEGIE: Probeer eerst heel profiel te verwijderen (meest grondig)
+            try {
+                Remove-Item $profilePath -Recurse -Force -ErrorAction Stop
+                $profileCount++
+                Write-Log -Message "Edge profiel volledig verwijderd: $profileName (inclusief sync-data)" -SkipEventLog
+            } catch {
+                # FALLBACK: Granulaire verwijdering als profiel in gebruik is
+                Write-Log -Message "Edge profiel in gebruik, granulaire cleanup: $profileName" -Level 'WARN' -SkipEventLog
+                
+                # Verwijder gevoelige bestanden (inclusief sync & credentials)
+                $targets = @(
+                    'History', 'Cookies', 'Cache', 'Local Storage', 'Network', 'Code Cache',
+                    'GPUCache', 'Session Storage', 'Top Sites', 'Visited Links', 'Sessions',
+                    'Login Data', 'Login Data For Account', 'Web Data',  # Credentials
+                    'Preferences', 'Secure Preferences',                  # Sync settings
+                    'Sync Data', 'Sync Extension Settings',               # Sync cache
+                    'IndexedDB', 'databases', 'Local Extension Settings'  # App data
+                )
+                
+                $removedItems = 0
+                foreach ($item in $targets) {
+                    $itemPath = Join-Path $profilePath $item
+                    if (Test-Path $itemPath) {
+                        try {
+                            Remove-Item $itemPath -Recurse -Force -ErrorAction Stop
+                            $removedItems++
+                        } catch {
+                            # Sommige bestanden kunnen locked zijn - niet fataal
+                        }
+                    }
+                }
+                
+                if ($removedItems -gt 0) {
+                    $profileCount++
+                    Write-Log -Message "Edge profiel $profileName`: $removedItems items verwijderd (incl. credentials/sync)"
+                }
             }
         }
-    Write-Log -Message 'Edge data verwijderd'
+    
+    if ($profileCount -gt 0) {
+        Write-Log -Message "Edge data verwijderd: $profileCount profiel(en) opgeschoond"
+    } else {
+        Write-Log -Message 'Edge: geen profielen gevonden of toegankelijk'
+    }
 }
 
 function Clear-FirefoxData {
     $base = Join-Path $env:APPDATA 'Mozilla\Firefox\Profiles'
     if (-not (Test-Path $base)) { return }
+    
+    $profileCount = 0
     Get-ChildItem -Path $base -Directory | ForEach-Object {
+        $profilePath = $_.FullName
+        $profileName = $_.Name
+        
+        # STRATEGIE: Probeer eerst heel profiel te verwijderen (meest grondig)
         try {
-            $targets = 'places.sqlite','cookies.sqlite','cache2','storage','startupCache',
-                       'sessionstore.jsonlz4','recovery.jsonlz4','previous.jsonlz4','sessionstore-backups'
-            foreach ($item in $targets) {
-                $p = Join-Path $_.FullName $item
-                if (Test-Path $p) { Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue }
-            }
-            Get-ChildItem -Path $_.FullName -Filter 'upgrade.jsonlz4*' -ErrorAction SilentlyContinue |
-                Remove-Item -Force -ErrorAction SilentlyContinue
-            Write-Log -Message ("Firefox data profiel '{0}' verwijderd" -f $_.Name)
+            Remove-Item $profilePath -Recurse -Force -ErrorAction Stop
+            $profileCount++
+            Write-Log -Message "Firefox profiel volledig verwijderd: $profileName (inclusief sync-data)" -SkipEventLog
         } catch {
-            Write-Log -Message ("Fout bij wissen Firefox profiel '{0}': {1}" -f $_.Name, $_.Exception.Message) -Level 'WARN'
+            # FALLBACK: Granulaire verwijdering als profiel in gebruik is
+            Write-Log -Message "Firefox profiel in gebruik, granulaire cleanup: $profileName" -Level 'WARN' -SkipEventLog
+            
+            # Verwijder gevoelige bestanden (inclusief sync & credentials)
+            $targets = @(
+                'places.sqlite', 'cookies.sqlite', 'cache2', 'storage', 'startupCache',
+                'sessionstore.jsonlz4', 'recovery.jsonlz4', 'previous.jsonlz4', 'sessionstore-backups',
+                'key4.db', 'logins.json', 'signedInUser.json',  # Credentials & Firefox Account
+                'prefs.js', 'times.json', 'formhistory.sqlite',  # Settings & form data
+                'weave', 'sync.log', 'synced-tabs.db'            # Firefox Sync data
+            )
+            
+            $removedItems = 0
+            foreach ($item in $targets) {
+                $itemPath = Join-Path $profilePath $item
+                if (Test-Path $itemPath) {
+                    try {
+                        Remove-Item $itemPath -Recurse -Force -ErrorAction Stop
+                        $removedItems++
+                    } catch {
+                        # Sommige bestanden kunnen locked zijn - niet fataal
+                    }
+                }
+            }
+            
+            # Verwijder upgrade bestanden (patronen)
+            Get-ChildItem -Path $profilePath -Filter 'upgrade.jsonlz4*' -ErrorAction SilentlyContinue |
+                ForEach-Object {
+                    try { 
+                        Remove-Item $_.FullName -Force -ErrorAction Stop
+                        $removedItems++
+                    } catch { }
+                }
+            
+            if ($removedItems -gt 0) {
+                $profileCount++
+                Write-Log -Message "Firefox profiel $profileName`: $removedItems items verwijderd (incl. credentials/sync)"
+            }
         }
+    }
+    
+    if ($profileCount -gt 0) {
+        Write-Log -Message "Firefox data verwijderd: $profileCount profiel(en) opgeschoond"
+    } else {
+        Write-Log -Message 'Firefox: geen profielen gevonden of toegankelijk'
     }
 }
 
@@ -410,25 +493,59 @@ function Clear-ChromeData {
         return
     }
 
-    Write-Log -Message 'Start Chrome data opruimen'
+    $profileCount = 0
     Get-ChildItem -Path $ProfileRoot -Directory |
         Where-Object Name -match '^(Default|Profile\d+|Guest Profile)$' |
         ForEach-Object {
-            $p = $_.FullName
-            $targets = @(
-                'History','Cookies','Cache','Local Storage','Session Storage',
-                'GPUCache','Code Cache','Network Action Predictor',
-                'Top Sites','Preferences','Visited Links','Sessions'
-            )
-            foreach ($t in $targets) {
-                $itemPath = Join-Path $p $t
-                if (Test-Path $itemPath) {
-                    Remove-Item $itemPath -Recurse -Force -ErrorAction SilentlyContinue
+            $profilePath = $_.FullName
+            $profileName = $_.Name
+            
+            # STRATEGIE: Probeer eerst heel profiel te verwijderen (meest grondig)
+            try {
+                Remove-Item $profilePath -Recurse -Force -ErrorAction Stop
+                $profileCount++
+                Write-Log -Message "Chrome profiel volledig verwijderd: $profileName (inclusief sync-data)" -SkipEventLog
+            } catch {
+                # FALLBACK: Granulaire verwijdering als profiel in gebruik is
+                Write-Log -Message "Chrome profiel in gebruik, granulaire cleanup: $profileName" -Level 'WARN' -SkipEventLog
+                
+                # Verwijder gevoelige bestanden (inclusief sync & credentials)
+                $targets = @(
+                    'History', 'Cookies', 'Cache', 'Local Storage', 'Session Storage',
+                    'GPUCache', 'Code Cache', 'Network Action Predictor',
+                    'Top Sites', 'Visited Links', 'Sessions',
+                    'Login Data', 'Login Data For Account', 'Web Data',  # Credentials
+                    'Preferences', 'Secure Preferences',                  # Sync settings & account
+                    'Sync Data', 'Sync Extension Settings',               # Google Sync cache
+                    'IndexedDB', 'databases', 'Local Extension Settings', # App data
+                    'Extension Cookies', 'Extension State'                # Extension data
+                )
+                
+                $removedItems = 0
+                foreach ($item in $targets) {
+                    $itemPath = Join-Path $profilePath $item
+                    if (Test-Path $itemPath) {
+                        try {
+                            Remove-Item $itemPath -Recurse -Force -ErrorAction Stop
+                            $removedItems++
+                        } catch {
+                            # Sommige bestanden kunnen locked zijn - niet fataal
+                        }
+                    }
+                }
+                
+                if ($removedItems -gt 0) {
+                    $profileCount++
+                    Write-Log -Message "Chrome profiel $profileName`: $removedItems items verwijderd (incl. credentials/sync)"
                 }
             }
-            Write-Log -Message ("  Chrome-profiel verwijderd: {0}" -f $_.Name)
         }
-    Write-Log -Message 'Einde Chrome data opruimen'
+    
+    if ($profileCount -gt 0) {
+        Write-Log -Message "Chrome data verwijderd: $profileCount profiel(en) opgeschoond"
+    } else {
+        Write-Log -Message 'Chrome: geen profielen gevonden of toegankelijk'
+    }
 }
 
 function Clear-WiFiProfiles {
@@ -588,7 +705,7 @@ function Clear-VideosFolder {
         # Bij scheduled task = de gebruiker die is ingelogd (via -UserId in task principal)
         $videosPath = [Environment]::GetFolderPath('MyVideos')
         if (-not (Test-Path $videosPath)) {
-            Write-Log -Message 'Video''s-map niet gevonden'
+            Write-Log -Message "Video's-map niet gevonden"
             return 0
         }
         
@@ -648,14 +765,27 @@ function Clear-OldBackups {
     try {
         # AVG: Verwijder backups ouder dan retentieperiode
         $cutoffDate = (Get-Date).AddDays(-$LogRetentionDays)
-        Get-ChildItem -Path $HiddenFolderPath -Filter 'backup_*' -ErrorAction SilentlyContinue |
-            Where-Object { $_.CreationTime -lt $cutoffDate } |
-            ForEach-Object {
-                Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
-                Write-Log -Message "AVG: Oude backup verwijderd na $LogRetentionDays dagen"
+        $oldBackups = Get-ChildItem -Path $HiddenFolderPath -Filter 'backup_*' -ErrorAction SilentlyContinue |
+            Where-Object { $_.CreationTime -lt $cutoffDate }
+        
+        $removedCount = 0
+        foreach ($backup in $oldBackups) {
+            try {
+                Remove-Item $backup.FullName -Force -ErrorAction Stop
+                $removedCount++
+                Write-Log -Message "AVG: Oude backup verwijderd na $LogRetentionDays dagen" -SkipEventLog
+            } catch {
+                Write-Log -Message "Fout bij verwijderen backup: $($_.Exception.Message)" -Level 'WARN'
             }
+        }
+        
+        if ($removedCount -gt 0) {
+            Write-Log -Message "Oude script-backups verwijderd: $removedCount items (ouder dan $LogRetentionDays dagen)"
+        }
+        return $removedCount
     } catch {
-        Write-Log -Message "Fout bij opschonen oude bestanden: $($_.Exception.Message)" -Level 'WARN'
+        Write-Log -Message "Fout bij opschonen oude backups: $($_.Exception.Message)" -Level 'WARN'
+        return -1
     }
 }
 
@@ -1173,12 +1303,12 @@ Voor volledige functionaliteit: Start als administrator
             if ($vidCount -gt 0) {
                 $completedSteps += "Video's-map geleegd ($vidCount items verwijderd)"
             } elseif ($vidCount -eq 0) {
-                $skippedSteps += 'Video''s-map (was al leeg)'
+                $skippedSteps += "Video's-map (was al leeg)"
             } else {
-                $skippedSteps += 'Video''s-map (fout bij opschonen)'
+                $skippedSteps += "Video's-map (fout bij opschonen)"
             }
         } else {
-            $skippedSteps += 'Video''s-map (uitgeschakeld in configuratie)'
+            $skippedSteps += "Video's-map (uitgeschakeld in configuratie)"
         }
         
         # Muziek map (VOORZICHTIG!)
@@ -1197,10 +1327,16 @@ Voor volledige functionaliteit: Start als administrator
         
         # Oude backups opschonen (indien ingeschakeld)
         if ($EnableBackupCleanup) {
-            Clear-OldBackups
-            # Functie logt zelf, geen extra status nodig
+            $backupCount = Clear-OldBackups
+            if ($backupCount -gt 0) {
+                $completedSteps += "Oude script-backups verwijderd ($backupCount items)"
+            } elseif ($backupCount -eq 0) {
+                $skippedSteps += 'Oude script-backups (geen verouderde backups gevonden)'
+            } else {
+                $skippedSteps += 'Oude script-backups (fout bij opschonen)'
+            }
         } else {
-            Write-Log -Message "Backup cleanup overgeslagen (uitgeschakeld in configuratie)"
+            $skippedSteps += 'Oude script-backups (uitgeschakeld in configuratie)'
         }
         
         if ($EnableFirewallReset) {

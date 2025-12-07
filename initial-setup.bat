@@ -3,8 +3,8 @@ setlocal enabledelayedexpansion
 
 :: ============================================================================
 :: Initial Setup Script voor Leenlaptop Opschoningsscript
-:: Versie: 1.6.0
-:: Datum: 2025-11-03
+:: Versie: 1.6.1
+:: Datum: 2025-12-07
 :: Doel: Eenvoudige en betrouwbare installatie vanaf USB-stick
 :: ============================================================================
 
@@ -14,7 +14,7 @@ echo.
 echo ========================================================================
 echo  LEENLAPTOP OPSCHONINGSSCRIPT - INSTALLATIE
 echo ========================================================================
-echo  Versie: 1.6.0
+echo  Versie: 1.6.1
 echo  AVG-conform ^| Volledig configureerbaar
 echo ========================================================================
 echo.
@@ -61,7 +61,7 @@ for /f "delims=" %%i in ('powershell.exe -NoProfile -ExecutionPolicy Bypass -Fil
 
 :: Fallbacks indien variabelen niet gelezen konden worden
 if not defined PS_HiddenFolderName set "PS_HiddenFolderName=LeenlaptopSchoonmaak"
-if not defined PS_ScriptVersion set "PS_ScriptVersion=1.6.0"
+if not defined PS_ScriptVersion set "PS_ScriptVersion=1.6.1"
 if not defined PS_TaskName set "PS_TaskName=LeenlaptopSchoonmaak"
 if not defined PS_EnableStartupTask set "PS_EnableStartupTask=true"
 if not defined PS_EnableShortcut set "PS_EnableShortcut=true"

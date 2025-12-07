@@ -4,6 +4,39 @@ Alle belangrijke wijzigingen aan dit project worden gedocumenteerd in dit bestan
 
 ---
 
+## [1.6.1] - 2025-12-07
+
+### 🔒 Browser Cleanup Beveiligingsverbetering
+- **VERBETERD**: Browser cleanup verwijdert nu ook synced account data (Microsoft/Google/Firefox Accounts)
+- **VERBETERD**: `Clear-EdgeData` - Hybrid strategie: volledig profiel verwijderen → fallback naar granulaire cleanup
+- **VERBETERD**: `Clear-FirefoxData` - Hybrid strategie met Firefox Sync, credentials en account data verwijdering
+- **VERBETERD**: `Clear-ChromeData` - Hybrid strategie met Google Sync en account credentials verwijdering
+- **TOEGEVOEGD**: Verwijdering van `Login Data`, `Login Data For Account` (credentials)
+- **TOEGEVOEGD**: Verwijdering van `Preferences`, `Secure Preferences` (account + sync instellingen)
+- **TOEGEVOEGD**: Verwijdering van `Sync Data`, `Sync Extension Settings` (sync cache)
+- **TOEGEVOEGD**: Firefox: `key4.db`, `logins.json`, `signedInUser.json` (passwords + account)
+- **TOEGEVOEGD**: Firefox: `weave/`, `sync.log`, `synced-tabs.db` (Firefox Sync data)
+- **VEILIG**: Bij locked files → fallback naar granulaire cleanup (robuuste werking)
+- **AVG**: Profielnamen alleen in lokale log met `-SkipEventLog` flag
+
+### 🐛 Bugfixes
+- **GEREPAREERD**: PowerShell syntax errors in browser cleanup functies (escaped colons in string interpolation)
+- **GECORRIGEERD**: `$EnableBackupCleanup` comment - was "niet geïmplementeerd", maar functie bestond wel
+- **VERBETERD**: `Clear-OldBackups` functie retourneert nu aantal verwijderde items (consistent met andere Clear-* functies)
+- **TOEGEVOEGD**: Statusrapportage voor `$EnableBackupCleanup` in eindstatus (was missing)
+- **GEÜNIFORMEERD**: Video's-map apostrof gebruik (dubbele quotes voor betere leesbaarheid)
+
+### 📝 Documentatie
+- **GECORRIGEERD**: `$EnableBackupCleanup` comment - nu "Oude script-backups verwijderen (gebruikt LogRetentionDays)"
+- **VERBETERD**: Duidelijkere foutmeldingen in `Clear-OldBackups` met try-catch per backup
+- **TOEGEVOEGD**: Betere logging voor hybrid browser cleanup strategy
+
+### 🔐 AVG & Privacy
+- **VERBETERD**: Browser cleanup verwijdert nu ook credentials en sync-data (conform privacy-by-design)
+- **BEHOUDEN**: Geen PII in Event Log voor profielnamen (alleen in lokale logs)
+
+---
+
 ## [1.6.0] - 2025-11-03
 
 ### ⚠️ BREAKING CHANGES - Automatische Migratie
