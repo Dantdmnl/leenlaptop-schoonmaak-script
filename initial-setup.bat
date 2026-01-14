@@ -3,8 +3,8 @@ setlocal enabledelayedexpansion
 
 :: ============================================================================
 :: Initial Setup Script voor Leenlaptop Opschoningsscript
-:: Versie: 1.6.1
-:: Datum: 2025-12-07
+:: Versie: 1.6.2
+:: Datum: 2026-01-14
 :: Doel: Eenvoudige en betrouwbare installatie vanaf USB-stick
 :: ============================================================================
 
@@ -14,7 +14,7 @@ echo.
 echo ========================================================================
 echo  LEENLAPTOP OPSCHONINGSSCRIPT - INSTALLATIE
 echo ========================================================================
-echo  Versie: 1.6.1
+echo  Versie: 1.6.2
 echo  AVG-conform ^| Volledig configureerbaar
 echo ========================================================================
 echo.
@@ -56,12 +56,18 @@ if %errorlevel% neq 0 (
 echo [INFO] Schoonmaakscript voor leenlaptops wordt gestart...
 echo        Script pad: !scriptPath!
 
-:: Lees configuratie dynamisch uit het PowerShell script (geen extra bestanden nodig)
-for /f "delims=" %%i in ('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "!scriptPath!" -PrintConfig') do %%i
+:: Lees configuratie dynamisch uit het PowerShell script met temp bestand (betere quote handling)
+set "tempConfigFile=%temp%\ps_config_%RANDOM%.txt"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& { param([string]$FilePath, [string]$OutFile); if (Test-Path $FilePath) { & $FilePath -PrintConfig | Out-File -FilePath $OutFile -Encoding ASCII } }" -FilePath "!scriptPath!" -OutFile "!tempConfigFile!"
+
+if exist "!tempConfigFile!" (
+    for /f "delims=" %%i in (!tempConfigFile!) do %%i
+    del /q "!tempConfigFile!" >nul 2>&1
+)
 
 :: Fallbacks indien variabelen niet gelezen konden worden
 if not defined PS_HiddenFolderName set "PS_HiddenFolderName=LeenlaptopSchoonmaak"
-if not defined PS_ScriptVersion set "PS_ScriptVersion=1.6.1"
+if not defined PS_ScriptVersion set "PS_ScriptVersion=1.6.2"
 if not defined PS_TaskName set "PS_TaskName=LeenlaptopSchoonmaak"
 if not defined PS_EnableStartupTask set "PS_EnableStartupTask=true"
 if not defined PS_EnableShortcut set "PS_EnableShortcut=true"
@@ -80,6 +86,7 @@ if not defined PS_EnableMusicCleanup set "PS_EnableMusicCleanup=false"
 if not defined PS_MusicMaxAgeDays set "PS_MusicMaxAgeDays=30"
 if not defined PS_EnableFirewallReset set "PS_EnableFirewallReset=true"
 if not defined PS_EnableBackupCleanup set "PS_EnableBackupCleanup=true"
+if not defined PS_MaxBackupCount set "PS_MaxBackupCount=10"
 if not defined PS_MaxExecutionMinutes set "PS_MaxExecutionMinutes=5"
 if not defined PS_LogRetentionDays set "PS_LogRetentionDays=30"
 
@@ -165,6 +172,11 @@ echo.
 echo        RETENTIE:
 echo        - Logretentie: %PS_LogRetentionDays% dagen
 echo        - Max uitvoering: %PS_MaxExecutionMinutes% minuten
+if "%PS_MaxBackupCount%"=="0" (
+    echo        - Max backups: ONBEPERKT
+) else (
+    echo        - Max backups: %PS_MaxBackupCount%
+)
 echo.
 echo ========================================================================
 echo.

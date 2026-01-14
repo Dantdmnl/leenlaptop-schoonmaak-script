@@ -4,6 +4,90 @@ Alle belangrijke wijzigingen aan dit project worden gedocumenteerd in dit bestan
 
 ---
 
+## [1.6.2] - 2026-01-14
+
+### ✨ Code Kwaliteit & Optimalisatie
+- **VERBETERD**: Eliminatie van 160+ regels duplicatie - 5 folder cleanup functies geconsolideerd naar 1 generieke `Clear-UserFolder`
+- **TOEGEVOEGD**: `Clear-UserFolder` met parameters voor `FolderType`, `MaxAgeDays` en `-ShowWarning` switch
+- **VERBETERD**: Hard-coded `C:\Users` vervangen door `$env:SystemDrive\Users` (werkt ook op niet-standaard installaties)
+- **VERBETERD**: Hard-coded `C:\` vervangen door `$env:SystemDrive` in desktop detectie (compatibiliteit met andere drives)
+- **TOEGEVOEGD**: Null-check in `Stop-Browsers` functie voor betere robuustheid
+- **VERBETERD**: `Stop-Browsers` - Firefox krijgt nu 7 retries ipv 3 (langzame afsluiting handling)
+- **VERBETERD**: `Stop-Browsers` - Verifiëert dat processen echt gestopt zijn (met status checks)
+- **VERBETERD**: Browser stop feedback - logt poging nummer bij success
+
+### 🔍 Configuratie Validatie
+- **NIEUW**: `Test-Configuration` functie valideert alle parameters bij script start
+- **TOEGEVOEGD**: Validatie numerieke waarden (> 0 checks voor MB, dagen, minuten)
+- **TOEGEVOEGD**: Validatie array types en structuur
+- **TOEGEVOEGD**: Uitgebreide browser validatie - toegestane browsers: msedge, chrome, firefox, brave, opera, vivaldi
+- **TOEGEVOEGD**: WiFi array validatie - geen lege strings toegestaan
+- **TOEGEVOEGD**: MaxBackupCount validatie (mag niet negatief zijn)
+
+### 💾 Backup Management Verbetering
+- **NIEUW**: `MaxBackupCount` configuratie (standaard: 5, 0 = onbeperkt)
+- **TOEGEVOEGD**: SHA256 hash verificatie na script kopieren - integriteit controle
+- **VERBETERD**: `Clear-OldBackups` refactored - twee onafhankelijke stappen:
+  - Stap 1: Verwijder backups ouder dan retentieperiode (AVG compliance)
+  - Stap 2: Enforce maximaal aantal backups (limiet enforcement)
+- **GEREPAREERD**: Backup limiet werkte niet door early return - nu altijd geactiveerd
+- **GEREPAREERD**: `.Count` bug in backup limiet - nu met array wrapper `@()`
+- **VERBETERD**: Backup failure logging - generic message naar Event Log, details naar file log
+- **VERBETERD**: Hash mismatch logging - geen paden in Event Log
+- **TOEGEVOEGD**: Individuele logging per verwijderde backup (limiet enforcement)
+
+### 🔧 Error Handling & Logging
+- **VERBETERD**: `Clear-OldBackups` feedback voor beide opschoningsszenaario's
+- **VERBETERD**: Betere foutmeldingen met aantal gefaalde items
+- **TOEGEVOEGD**: Melding wanneer geen oude backups gevonden worden (retentie informatie)
+- **VERBETERD**: Backup kopieerfout blokkeert update niet meer - logt warning en gaat door
+- **VERBETERD**: Hash verification fout gelogd, maar blokkeert andere taken niet
+
+### 🔐 AVG & Privacy Compliance
+- **VERBETERD**: Edge profiel logging nu met `-SkipEventLog` (profielnamen alleen in file log)
+- **VERBETERD**: Chrome profiel logging nu met `-SkipEventLog` (profielnamen alleen in file log)
+- **BEHOUDEN**: Firefox profiel logging al correct met `-SkipEventLog` (was al AVG-compliant)
+- **VERBETERD**: Backup exception logging opgesplitst - generic warning naar Event Log, details naar file log
+- **VERBETERD**: Hash verificatie details naar file log via `-SkipEventLog`
+
+### 🐛 Bugfixes
+- **GEREPAREERD**: Batch script quote escaping issue - temp bestand voor config uitlezing (ASCII encoding)
+- **GEREPAREERD**: UTF-8 BOM issue in batch config import - changed naar ASCII encoding
+- **GEREPAREERD**: PowerShell 5.1 incompatibiliteit - ternary operator `?:` → `if/else`
+- **GEREPAREERD**: Backup Measure-Object count bug in Clear-UserFolder - array assignment
+- **GEREPAREERD**: Backup limiet enforcement logica - `.Count` met array wrapper
+
+### 📝 Documentatie & Batch Script
+- **BIJGEWERKT**: Versienummer naar 1.6.2 in alle bestanden
+- **BIJGEWERKT**: Laatste wijzigingsdatum naar 2026-01-14
+- **TOEGEVOEGD**: `PS_MaxBackupCount` fallback in batch script (standaard: 10)
+- **TOEGEVOEGD**: "Max backups" in RETENTIE sectie van batch summary
+- **VERBETERD**: Max backups display - "ONBEPERKT" wanneer waarde is 0
+
+### 🎯 User Experience
+- **NIEUW**: `Write-Progress` voortgangsbalk met 11 stappen voor real-time feedback
+- **TOEGEVOEGD**: Progress indicatoren voor: Script installeren, Browsers, WiFi, Temp, Downloads, Documenten, Afbeeldingen, Video's, Muziek, Firewall, Voorzieningen
+- **VERBETERD**: Gebruiker ziet nu exact welke stap wordt uitgevoerd tijdens opschoning
+- **VERBETERD**: Progress bar wordt netjes afgesloten na voltooiing
+
+### 🐛 Bugfixes
+- **GEREPAREERD**: Variable scope error - `$displayName:` → `${displayName}:` in error messages
+- **GEREPAREERD**: quser parsing bug - `>gebruiker` wordt nu correct geparsed naar `gebruiker`
+- **GEREPAREERD**: "Illegal characters in path" error bij desktop detectie
+- **VERBETERD**: Regex pattern voor quser output met optionele `>` karakter handling
+
+### 🔧 Error Handling
+- **VERBETERD**: `Clear-OldBackups` geeft nu feedback over succesvolle én gefaalde verwijderingen
+- **VERBETERD**: Betere foutmeldingen met aantal gefaalde items
+- **TOEGEVOEGD**: Melding wanneer geen oude backups gevonden worden (retentie informatie)
+
+### 📝 Documentatie
+- **BIJGEWERKT**: Versienummer overal consistent naar 1.6.2
+- **BIJGEWERKT**: Laatste wijzigingsdatum naar 2026-01-11
+- **VERBETERD**: Code comments voor nieuwe functies en validaties
+
+---
+
 ## [1.6.1] - 2025-12-07
 
 ### 🔒 Browser Cleanup Beveiligingsverbetering

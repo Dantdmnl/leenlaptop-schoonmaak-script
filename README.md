@@ -3,7 +3,7 @@
 ## Overzicht
 Dit PowerShell-script is ontworpen om de opschoning en herconfiguratie van leenlaptops te automatiseren. Het script zorgt ervoor dat apparaten na terugkomst snel en veilig worden teruggebracht naar een schone, gestandaardiseerde staat zonder persoonlijke data of sessies.
 
-**Versie:** 1.6.1 | **Release datum:** 7 december 2025
+**Versie:** 1.6.2 | **Release datum:** 14 januari 2026
 
 ## 📋 Ontwerp & Conformiteit
 Dit script is ontwikkeld conform een professioneel technisch ontwerp en voldoet aan:
@@ -150,10 +150,15 @@ Het script is volledig configureerbaar via variabelen in het `#region Configurat
 [bool] $EnableMusicCleanup     = $false           # 🎵 Muziek-map opschonen (VOORZICHTIG!)
 [int]  $MusicMaxAgeDays        = 30               # 📅 Alleen bestanden ouder dan X dagen
 [bool] $EnableFirewallReset    = $true            # 🔥 Windows Firewall reset
-[bool] $EnableBackupCleanup    = $true            # 🗄️ Oude backups verwijderen (30 dagen)
+[bool] $EnableBackupCleanup    = $true            # 🗄️ Oude backups verwijderen (30 dagen retentie)
+[int]  $MaxBackupCount         = 5                # 📦 Max backups te behouden (0 = onbeperkt)
 ```
 
 **💡 NIEUW in v1.6.0**: Alle folder cleanup functies gebruiken nu **leeftijdsfiltering**! Alleen bestanden ouder dan X dagen worden verwijderd (niet alles). Downloads standaard 7 dagen, rest 30 dagen.
+
+**💡 NIEUW in v1.6.2**: Intelligente backup management met dubbele opschoning:
+- **Retentie**: Verwijder backups ouder dan 30 dagen (AVG compliance)
+- **Limiet**: Houd maximaal `MaxBackupCount` backups (standaard 5, 0 = onbeperkt)
 
 **⚠️ BELANGRIJK**: Media-mappen (Documenten, Afbeeldingen, Video's, Muziek) staan standaard **UIT** vanwege het risico op dataverlies. Downloads-cleanup is standaard **AAN** (veilig met 7 dagen filter).
 
@@ -163,7 +168,7 @@ Het script is volledig configureerbaar via variabelen in het `#region Configurat
 [int]  $MaxRetries          = 3                   # 🔁 Max herhaalpogingen
 [int]  $MaxExecutionMinutes = 5                   # ⏱️ Max uitvoeringstijd (ontwerp-eis)
 [int]  $LogRetentionDays    = 30                  # 🔐 AVG: Log retentie in dagen
-[string]$ScriptVersion      = '1.6.1'             # 📋 Huidige versie
+[string]$ScriptVersion      = '1.6.2'             # 📋 Huidige versie
 ```
 
 
@@ -198,7 +203,7 @@ Na elke uitvoering toont het script een duidelijke status:
   OPSCHONING VOLTOOID - APPARAAT KLAAR VOOR UITLEEN
 ===================================================
 Tijdstip: 2025-12-07 14:30:15
-Versie: 1.6.1
+Versie: 1.6.2
 Uitvoeringstijd: 43.2 seconden
 
 + Browsers gestopt en data verwijderd (chrome, msedge)
@@ -319,7 +324,7 @@ $EnableFirewallReset    = $false  # Netwerk-instellingen bewaren
 
 ## 📋 **Versie-informatie**
 
-**Huidige versie**: `1.6.0` (3 november 2025)  
+**Huidige versie**: `1.6.2` (14 januari 2026)  
 **Belangrijkste wijzigingen**:
 - 🔄 **Automatische migratie**: Oude installaties (v1.5.0) worden automatisch gemigreerd
 - 📁 **Nieuwe locatie**: `C:\ProgramData\LeenlaptopSchoonmaak` (was: `%LOCALAPPDATA%\HiddenScripts`)

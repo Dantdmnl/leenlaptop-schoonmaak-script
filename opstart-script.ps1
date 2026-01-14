@@ -22,9 +22,8 @@
 
 .NOTES
     Auteur: Ruben Draaisma
-    Datum: 2025-10-23
-    VERSIE: 1.6.1
-    Laatste wijziging: 2025-12-07 (yyyy-mm-dd)
+    VERSIE: 1.6.2
+    Laatste wijziging: 2026-01-14 (yyyy-mm-dd)
     AVG-conform: Minimale logging van persoonsgegevens, 30 dagen retentie
     Volledig configureerbaar: Alle opschoonacties kunnen in/uitgeschakeld worden
        
@@ -36,6 +35,12 @@
 param(
     [switch]$PrintConfig
 )
+
+# Versie-check: PowerShell 5.1 minimum
+if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -lt 1)) {
+    Write-Error "Dit script vereist PowerShell 5.1 of hoger. Huidge versie: $($PSVersionTable.PSVersion)"
+    exit 1
+}
 
 #region Configuratie
 # ============================================================================
@@ -60,7 +65,7 @@ param(
 [string]$TaskName           = 'LeenlaptopSchoonmaak'  # Naam van scheduled task
 [string]$LogFileName        = 'log.txt'               # Naam van logbestand
 [string]$EventSource        = 'LeenlaptopSchoonmaak'  # Event Log bron
-[string]$ScriptVersion      = '1.6.1'                 # Huidige scriptversie
+[string]$ScriptVersion      = '1.6.2'                 # Huidige scriptversie
 
 # ============================================================================
 # VOORZIENINGEN (wat wordt geïnstalleerd)
@@ -98,6 +103,7 @@ param(
 [bool] $EnableFirewallReset = $true      # Firewall naar standaardinstellingen resetten
 
 [bool] $EnableBackupCleanup = $true      # Oude script-backups verwijderen (gebruikt LogRetentionDays)
+[int]  $MaxBackupCount      = 5         # Max aantal backups (0 = geen limiet)
 
 # ============================================================================
 # GEAVANCEERDE INSTELLINGEN
@@ -106,7 +112,7 @@ param(
 [int]  $LogRetentionDays    = 30         # AVG: Logretentie in dagen
 [int]  $MaxRetries          = 3          # Maximaal aantal herhaalpogingen bij fouten
 [int]  $MaxExecutionMinutes = 5          # Maximale uitvoeringstijd
-[bool] $ForceUpdate         = $false     # Forceer update van bestaand script
+[bool] $ForceUpdate         = $true     # Forceer update van bestaand script
 #endregion
 
 if ($PrintConfig) {
@@ -141,6 +147,7 @@ if ($PrintConfig) {
         MaxRetries             = $MaxRetries
         MaxExecutionMinutes    = $MaxExecutionMinutes
         ForceUpdate            = $ForceUpdate
+        MaxBackupCount         = $MaxBackupCount
         HiddenFolderPath       = "C:\ProgramData\$HiddenFolderName"
     }
 
@@ -169,7 +176,7 @@ function Initialize-Environment {
     try {
         # Migratie van 1.5.0 naar 1.6.0: verplaats van LOCALAPPDATA naar ProgramData
         $oldPath = Join-Path $env:LOCALAPPDATA 'HiddenScripts'
-        $global:HiddenFolderPath = "C:\ProgramData\$HiddenFolderName"
+        $global:HiddenFolderPath = Join-Path $env:SystemDrive "ProgramData\$HiddenFolderName"
         
         if ((Test-Path $oldPath) -and -not (Test-Path $HiddenFolderPath)) {
             Write-Host "[MIGRATIE] Verplaats installatie van 1.5.0 naar 1.6.0..." -ForegroundColor Yellow
@@ -239,6 +246,69 @@ function Initialize-Environment {
     } catch {
         throw "Fout bij initialiseren omgeving: $($_.Exception.Message)"
     }
+}
+
+function Test-Configuration {
+    <#
+    .SYNOPSIS
+    Valideert alle configuratieparameters bij script start.
+    #>
+    $errors = @()
+    
+    # Valideer numerieke waarden
+    if ($MaxLogSizeMB -le 0) { $errors += "MaxLogSizeMB moet groter dan 0 zijn (huidige waarde: $MaxLogSizeMB)" }
+    if ($LogRetentionDays -le 0) { $errors += "LogRetentionDays moet groter dan 0 zijn (huidige waarde: $LogRetentionDays)" }
+    if ($MaxRetries -le 0) { $errors += "MaxRetries moet groter dan 0 zijn (huidige waarde: $MaxRetries)" }
+    if ($MaxExecutionMinutes -le 0) { $errors += "MaxExecutionMinutes moet groter dan 0 zijn (huidige waarde: $MaxExecutionMinutes)" }
+    if ($DownloadsMaxAgeDays -lt 0) { $errors += "DownloadsMaxAgeDays mag niet negatief zijn (huidige waarde: $DownloadsMaxAgeDays)" }
+    if ($DocumentsMaxAgeDays -lt 0) { $errors += "DocumentsMaxAgeDays mag niet negatief zijn (huidige waarde: $DocumentsMaxAgeDays)" }
+    if ($PicturesMaxAgeDays -lt 0) { $errors += "PicturesMaxAgeDays mag niet negatief zijn (huidige waarde: $PicturesMaxAgeDays)" }
+    if ($VideosMaxAgeDays -lt 0) { $errors += "VideosMaxAgeDays mag niet negatief zijn (huidige waarde: $VideosMaxAgeDays)" }
+    if ($MusicMaxAgeDays -lt 0) { $errors += "MusicMaxAgeDays mag niet negatief zijn (huidige waarde: $MusicMaxAgeDays)" }
+    if ($MaxBackupCount -lt 0)  { $errors += "MaxBackupCount mag niet negatief zijn (huidige waarde: $MaxBackupCount)" }
+    
+    # Valideer arrays (mogen null zijn maar moeten wel arrays zijn als ze bestaan)
+    if ($null -ne $BrowserList -and $BrowserList -isnot [array]) {
+        $errors += "BrowserList moet een array zijn: @('msedge','chrome','firefox')"
+    }
+    if ($null -ne $AllowedWiFi -and $AllowedWiFi -isnot [array]) {
+        $errors += "AllowedWiFi moet een array zijn: @() of @('netwerk1','netwerk2')"
+    }
+    
+    # Valideer BrowserList items (alleen bekende browsers)
+    $validBrowsers = @('msedge', 'chrome', 'firefox', 'brave', 'opera', 'vivaldi')
+    if ($BrowserList -and $BrowserList.Count -gt 0) {
+        foreach ($browser in $BrowserList) {
+            if ([string]::IsNullOrWhiteSpace($browser)) {
+                $errors += "BrowserList bevat lege waarde - verwijder lege items"
+            } elseif ($browser -notin $validBrowsers) {
+                $errors += "Onbekende browser '$browser' in BrowserList. Toegestaan: $($validBrowsers -join ', ')"
+            }
+        }
+    }
+    
+    # Valideer AllowedWiFi items (geen lege strings)
+    if ($AllowedWiFi -and $AllowedWiFi.Count -gt 0) {
+        foreach ($wifi in $AllowedWiFi) {
+            if ([string]::IsNullOrWhiteSpace($wifi)) {
+                $errors += "AllowedWiFi bevat lege waarde - verwijder lege items of gebruik @() voor alles verwijderen"
+            }
+        }
+    }
+    
+    # Valideer string waarden niet leeg zijn
+    if ([string]::IsNullOrWhiteSpace($HiddenFolderName)) { $errors += 'HiddenFolderName mag niet leeg zijn' }
+    if ([string]::IsNullOrWhiteSpace($TaskName)) { $errors += 'TaskName mag niet leeg zijn' }
+    if ([string]::IsNullOrWhiteSpace($LogFileName)) { $errors += 'LogFileName mag niet leeg zijn' }
+    if ([string]::IsNullOrWhiteSpace($EventSource)) { $errors += 'EventSource mag niet leeg zijn' }
+    
+    # Retourneer validatieresultaat
+    if ($errors.Count -gt 0) {
+        $errorMsg = "CONFIGURATIE FOUTEN GEDETECTEERD:`n" + ($errors -join "`n")
+        throw $errorMsg
+    }
+    
+    Write-Log -Message 'Configuratie validatie geslaagd'
 }
 
 function Backup-Log {
@@ -321,11 +391,33 @@ function Copy-ScriptToHidden {
             if (Test-Path $dest) {
                 $backupName = "backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')_$(Split-Path $source -Leaf)"
                 $backupPath = Join-Path $HiddenFolderPath $backupName
-                Copy-Item -Path $dest -Destination $backupPath -Force
-                Write-Log -Message "Backup gemaakt: $backupName"
+                try {
+                    Copy-Item -Path $dest -Destination $backupPath -Force -ErrorAction Stop
+                    Write-Log -Message "Backup gemaakt: $backupName"
+                } catch {
+                    # Backup mislukt mag de update niet blokkeren (AVG: geen paden in Event Log)
+                    Write-Log -Message "Backup mislukt, ga door met update" -Level 'WARN'
+                    Write-Log -Message ("Backup exception: {0}" -f $_.Exception.Message) -SkipEventLog
+                }
             }
             
             Copy-Item -Path $source -Destination $dest -Force
+
+            # Verifieer integriteit (SHA256 hash-vergelijking) - AVG: geen paden in Event Log
+            try {
+                $srcHash = Get-FileHash -Algorithm SHA256 -Path $source -ErrorAction Stop
+                $dstHash = Get-FileHash -Algorithm SHA256 -Path $dest   -ErrorAction Stop
+                if ($srcHash.Hash -ne $dstHash.Hash) {
+                    Write-Log -Message "Bestandsverificatie mislukt: hash mismatch (kopie beschadigd)" -Level 'ERROR'
+                    Write-Log -Message ("Details: src={0} dst={1}" -f $srcHash.Hash, $dstHash.Hash) -SkipEventLog
+                    throw "Hash mismatch na kopieren"
+                } else {
+                    Write-Log -Message "Bestandsverificatie geslaagd (SHA256)"
+                }
+            } catch {
+                # Hash fouten mogen niet in Event Log met paden terecht komen
+                Write-Log -Message ("Fout bij hash-verificatie: {0}" -f $_.Exception.Message) -Level 'WARN' -SkipEventLog
+            }
             
             # Zet ForceUpdate op $false in de gekopieerde versie om oneindige loops te voorkomen
             if ($ForceUpdate) {
@@ -349,16 +441,41 @@ function Copy-ScriptToHidden {
 }
 
 function Stop-Browsers {
+    if (-not $BrowserList -or $BrowserList.Count -eq 0) {
+        Write-Log -Message 'Geen browsers om te stoppen (BrowserList is leeg)'
+        return
+    }
+    
     foreach ($name in $BrowserList) {
-        try {
-            # AVG: Filter op proces zonder username te loggen
-            $processes = Get-Process -Name $name -ErrorAction SilentlyContinue
-            if ($processes) {
+        # Firefox kan langer duren om af te sluiten, meer retries nodig
+        $maxAttempts = if ($name -eq 'firefox') { 7 } else { $MaxRetries }
+        
+        for ($i = 1; $i -le $maxAttempts; $i++) {
+            try {
+                $processes = Get-Process -Name $name -ErrorAction SilentlyContinue
+                if (-not $processes) {
+                    if ($i -eq 1) {
+                        Write-Log -Message ("Browser niet actief: {0}" -f $name)
+                    }
+                    break
+                }
+                
                 $processes | Stop-Process -Force -ErrorAction SilentlyContinue
-                Write-Log -Message ("Browser gestopt: {0} ({1} processen)" -f $name, $processes.Count)
+                
+                # Verifieer proces is gestopt
+                Start-Sleep -Milliseconds 300
+                $stillRunning = Get-Process -Name $name -ErrorAction SilentlyContinue
+                
+                if (-not $stillRunning) {
+                    Write-Log -Message ("Browser gestopt: {0} (poging {1})" -f $name, $i)
+                    break
+                } elseif ($i -eq $maxAttempts) {
+                    Write-Log -Message ("Browser kon niet volledig worden gestopt na {0} pogingen: {1}" -f $maxAttempts, $name) -Level 'WARN'
+                }
+            } catch {
+                Write-Log -Message ("Fout bij stoppen browser {0}: {1}" -f $name, $_.Exception.Message) -Level 'WARN'
+                break
             }
-        } catch {
-            Write-Log -Message ("Fout bij stoppen browser {0}: {1}" -f $name, $_.Exception.Message) -Level 'WARN'
         }
     }
     Start-Sleep -Seconds 2
@@ -409,7 +526,9 @@ function Clear-EdgeData {
                 
                 if ($removedItems -gt 0) {
                     $profileCount++
-                    Write-Log -Message "Edge profiel $profileName`: $removedItems items verwijderd (incl. credentials/sync)"
+                    Write-Log -Message "Edge profiel $profileName`: $removedItems items verwijderd (incl. credentials/sync)" -SkipEventLog
+                } else {
+                    Write-Log -Message "Edge profiel $profileName`: granulaire cleanup mislukt (alle bestanden locked)" -Level 'WARN' -SkipEventLog
                 }
             }
         }
@@ -430,50 +549,41 @@ function Clear-FirefoxData {
         $profilePath = $_.FullName
         $profileName = $_.Name
         
-        # STRATEGIE: Probeer eerst heel profiel te verwijderen (meest grondig)
-        try {
-            Remove-Item $profilePath -Recurse -Force -ErrorAction Stop
+        # STRATEGIE: Granulaire verwijdering - laat profiel bestaan, wis gevoelige data
+        # Dit voorkomt dat Firefox geen profiel meer heeft (wat corruptie veroorzaakt)
+        $targets = @(
+            'places.sqlite', 'cookies.sqlite', 'cache2', 'storage', 'startupCache',
+            'sessionstore.jsonlz4', 'recovery.jsonlz4', 'previous.jsonlz4', 'sessionstore-backups',
+            'key4.db', 'logins.json', 'signedInUser.json',  # Credentials & Firefox Account
+            'prefs.js', 'times.json', 'formhistory.sqlite',  # Settings & form data
+            'weave', 'sync.log', 'synced-tabs.db'            # Firefox Sync data
+        )
+        
+        $removedItems = 0
+        foreach ($item in $targets) {
+            $itemPath = Join-Path $profilePath $item
+            if (Test-Path $itemPath) {
+                try {
+                    Remove-Item $itemPath -Recurse -Force -ErrorAction Stop
+                    $removedItems++
+                } catch {
+                    # Sommige bestanden kunnen locked zijn - niet fataal
+                }
+            }
+        }
+        
+        # Verwijder upgrade bestanden (patronen)
+        Get-ChildItem -Path $profilePath -Filter 'upgrade.jsonlz4*' -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                try { 
+                    Remove-Item $_.FullName -Force -ErrorAction Stop
+                    $removedItems++
+                } catch { }
+            }
+        
+        if ($removedItems -gt 0) {
             $profileCount++
-            Write-Log -Message "Firefox profiel volledig verwijderd: $profileName (inclusief sync-data)" -SkipEventLog
-        } catch {
-            # FALLBACK: Granulaire verwijdering als profiel in gebruik is
-            Write-Log -Message "Firefox profiel in gebruik, granulaire cleanup: $profileName" -Level 'WARN' -SkipEventLog
-            
-            # Verwijder gevoelige bestanden (inclusief sync & credentials)
-            $targets = @(
-                'places.sqlite', 'cookies.sqlite', 'cache2', 'storage', 'startupCache',
-                'sessionstore.jsonlz4', 'recovery.jsonlz4', 'previous.jsonlz4', 'sessionstore-backups',
-                'key4.db', 'logins.json', 'signedInUser.json',  # Credentials & Firefox Account
-                'prefs.js', 'times.json', 'formhistory.sqlite',  # Settings & form data
-                'weave', 'sync.log', 'synced-tabs.db'            # Firefox Sync data
-            )
-            
-            $removedItems = 0
-            foreach ($item in $targets) {
-                $itemPath = Join-Path $profilePath $item
-                if (Test-Path $itemPath) {
-                    try {
-                        Remove-Item $itemPath -Recurse -Force -ErrorAction Stop
-                        $removedItems++
-                    } catch {
-                        # Sommige bestanden kunnen locked zijn - niet fataal
-                    }
-                }
-            }
-            
-            # Verwijder upgrade bestanden (patronen)
-            Get-ChildItem -Path $profilePath -Filter 'upgrade.jsonlz4*' -ErrorAction SilentlyContinue |
-                ForEach-Object {
-                    try { 
-                        Remove-Item $_.FullName -Force -ErrorAction Stop
-                        $removedItems++
-                    } catch { }
-                }
-            
-            if ($removedItems -gt 0) {
-                $profileCount++
-                Write-Log -Message "Firefox profiel $profileName`: $removedItems items verwijderd (incl. credentials/sync)"
-            }
+            Write-Log -Message "Firefox profiel $profileName`: $removedItems items verwijderd (incl. credentials/sync)" -SkipEventLog
         }
     }
     
@@ -536,7 +646,7 @@ function Clear-ChromeData {
                 
                 if ($removedItems -gt 0) {
                     $profileCount++
-                    Write-Log -Message "Chrome profiel $profileName`: $removedItems items verwijderd (incl. credentials/sync)"
+                    Write-Log -Message "Chrome profiel $profileName`: $removedItems items verwijderd (incl. credentials/sync)" -SkipEventLog
                 }
             }
         }
@@ -567,22 +677,26 @@ function Clear-WiFiProfiles {
 
     $removedCount = 0
     $keptCount = 0
+    $failedCount = 0
     foreach ($wifiProfile in $profiles) {
         if ($AllowedWiFi -contains $wifiProfile) {
             $keptCount++
-            Write-Log -Message "Profiel behouden (whitelist)" -SkipEventLog
+            Write-Log -Message "Wi-Fi profiel behouden (whitelist): $wifiProfile" -SkipEventLog
         } else {
-            Write-Log -Message "Profiel verwijderd" -SkipEventLog
             netsh wlan delete profile name="$wifiProfile" 2>&1 | Out-Null
             if ($LASTEXITCODE -eq 0) {
                 $removedCount++
+                Write-Log -Message "Wi-Fi profiel verwijderd: $wifiProfile" -SkipEventLog
             } else {
-                Write-Log -Message "Fout bij verwijderen Wi-Fi profiel (exit code $LASTEXITCODE)" -Level 'WARN'
+                $failedCount++
+                Write-Log -Message "Fout bij verwijderen Wi-Fi profiel $wifiProfile (exit code $LASTEXITCODE)" -Level 'WARN'
             }
         }
     }
 
-    Write-Log -Message "Wi-Fi opschoning voltooid: $removedCount verwijderd, $keptCount behouden"
+    $msg = "Wi-Fi opschoning voltooid: $removedCount verwijderd, $keptCount behouden"
+    if ($failedCount -gt 0) { $msg += ", $failedCount mislukt" }
+    Write-Log -Message $msg
     return @{ Removed = $removedCount; Kept = $keptCount }
 }
 
@@ -590,7 +704,8 @@ function Clear-TempFiles {
     try {
         # Gebruikt de Temp-map van de INGELOGDE gebruiker (%TEMP%)
         # Bij scheduled task = de gebruiker die is ingelogd (via -UserId in task principal)
-        $itemCount = (Get-ChildItem "$env:TEMP" -ErrorAction SilentlyContinue | Measure-Object).Count
+        $items = @(Get-ChildItem "$env:TEMP" -ErrorAction SilentlyContinue)
+        $itemCount = $items.Count
         if ($itemCount -eq 0) {
             Write-Log -Message 'Temp-map is al leeg'
             return 0
@@ -609,7 +724,7 @@ function Clear-DownloadsFolder {
         # Gebruikt de Downloads-map van de INGELOGDE gebruiker
         # Bij scheduled task = de gebruiker die is ingelogd (via -UserId in task principal)
         # Gebruik Shell.Application COM object voor betrouwbare Downloads pad
-        $shell = New-Object -ComObject Shell.Application
+        $shell = New-Object -ComObject Shell.Application -ErrorAction Stop
         $downloadsPath = $shell.NameSpace('shell:Downloads').Self.Path
         
         if (-not $downloadsPath -or -not (Test-Path $downloadsPath)) {
@@ -619,10 +734,10 @@ function Clear-DownloadsFolder {
         
         # Filter op leeftijd (alleen bestanden ouder dan X dagen)
         $cutoffDate = (Get-Date).AddDays(-$DownloadsMaxAgeDays)
-        $oldItems = Get-ChildItem $downloadsPath -Recurse -ErrorAction SilentlyContinue | 
-                    Where-Object { $_.LastWriteTime -lt $cutoffDate }
+        $oldItems = @(Get-ChildItem $downloadsPath -Recurse -ErrorAction SilentlyContinue | 
+                      Where-Object { $_.LastWriteTime -lt $cutoffDate })
         
-        $itemCount = ($oldItems | Measure-Object).Count
+        $itemCount = $oldItems.Count
         if ($itemCount -eq 0) {
             Write-Log -Message "Downloads-map: geen bestanden ouder dan $DownloadsMaxAgeDays dagen"
             return 0
@@ -637,151 +752,135 @@ function Clear-DownloadsFolder {
     }
 }
 
-function Clear-DocumentsFolder {
+function Clear-UserFolder {
+    <#
+    .SYNOPSIS
+    Generieke functie voor het opschonen van gebruikersmappen op basis van leeftijd.
+    
+    .DESCRIPTION
+    Verwijdert bestanden ouder dan opgegeven aantal dagen uit een gebruikersmap.
+    Gebruikt de map van de INGELOGDE gebruiker (bij scheduled task = ingelogde gebruiker via -UserId).
+    
+    .PARAMETER FolderType
+    Type gebruikersmap: MyDocuments, MyPictures, MyVideos, MyMusic
+    
+    .PARAMETER MaxAgeDays
+    Bestanden ouder dan dit aantal dagen worden verwijderd
+    
+    .PARAMETER ShowWarning
+    Toon waarschuwing in log voor gevoelige mappen
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('MyDocuments', 'MyPictures', 'MyVideos', 'MyMusic')]
+        [string]$FolderType,
+        
+        [Parameter(Mandatory)]
+        [int]$MaxAgeDays,
+        
+        [switch]$ShowWarning
+    )
+    
     try {
-        # Gebruikt de Documenten-map van de INGELOGDE gebruiker
-        # Bij scheduled task = de gebruiker die is ingelogd (via -UserId in task principal)
-        $documentsPath = [Environment]::GetFolderPath('MyDocuments')
-        if (-not (Test-Path $documentsPath)) {
-            Write-Log -Message 'Documenten-map niet gevonden'
+        # Vertaal folder type naar leesbare naam
+        $folderNames = @{
+            'MyDocuments' = 'Documenten'
+            'MyPictures'  = 'Afbeeldingen'
+            'MyVideos'    = "Video's"
+            'MyMusic'     = 'Muziek'
+        }
+        $displayName = $folderNames[$FolderType]
+        
+        # Haal mappad op
+        $folderPath = [Environment]::GetFolderPath($FolderType)
+        if (-not (Test-Path $folderPath)) {
+            Write-Log -Message "$displayName-map niet gevonden"
             return 0
         }
         
         # Filter op leeftijd (alleen bestanden ouder dan X dagen)
-        $cutoffDate = (Get-Date).AddDays(-$DocumentsMaxAgeDays)
-        $oldItems = Get-ChildItem $documentsPath -Recurse -ErrorAction SilentlyContinue | 
-                    Where-Object { $_.LastWriteTime -lt $cutoffDate }
+        $cutoffDate = (Get-Date).AddDays(-$MaxAgeDays)
+        $oldItems = @(Get-ChildItem $folderPath -Recurse -ErrorAction SilentlyContinue | 
+                      Where-Object { $_.LastWriteTime -lt $cutoffDate })
         
-        $itemCount = ($oldItems | Measure-Object).Count
+        $itemCount = $oldItems.Count
         if ($itemCount -eq 0) {
-            Write-Log -Message "Documenten-map: geen bestanden ouder dan $DocumentsMaxAgeDays dagen"
+            Write-Log -Message "$displayName-map: geen bestanden ouder dan $MaxAgeDays dagen"
             return 0
         }
         
-        Write-Log -Message "WAARSCHUWING: Documenten-map wordt opgeschoond: $itemCount items (ouder dan $DocumentsMaxAgeDays dagen)" -Level 'WARN'
+        # Optionele waarschuwing voor gevoelige mappen
+        if ($ShowWarning) {
+            Write-Log -Message "WAARSCHUWING: $displayName-map wordt opgeschoond: $itemCount items (ouder dan $MaxAgeDays dagen)" -Level 'WARN'
+        }
+        
         $oldItems | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Log -Message "Documenten-map opgeschoond: $itemCount items verwijderd"
+        Write-Log -Message "$displayName-map opgeschoond: $itemCount items verwijderd (ouder dan $MaxAgeDays dagen)"
         return $itemCount
     } catch {
-        Write-Log -Message "Fout bij opschonen Documenten: $($_.Exception.Message)" -Level 'WARN'
-        return -1
-    }
-}
-
-function Clear-PicturesFolder {
-    try {
-        # Gebruikt de Afbeeldingen-map van de INGELOGDE gebruiker
-        # Bij scheduled task = de gebruiker die is ingelogd (via -UserId in task principal)
-        $picturesPath = [Environment]::GetFolderPath('MyPictures')
-        if (-not (Test-Path $picturesPath)) {
-            Write-Log -Message 'Afbeeldingen-map niet gevonden'
-            return 0
-        }
-        
-        # Filter op leeftijd (alleen bestanden ouder dan X dagen)
-        $cutoffDate = (Get-Date).AddDays(-$PicturesMaxAgeDays)
-        $oldItems = Get-ChildItem $picturesPath -Recurse -ErrorAction SilentlyContinue | 
-                    Where-Object { $_.LastWriteTime -lt $cutoffDate }
-        
-        $itemCount = ($oldItems | Measure-Object).Count
-        if ($itemCount -eq 0) {
-            Write-Log -Message "Afbeeldingen-map: geen bestanden ouder dan $PicturesMaxAgeDays dagen"
-            return 0
-        }
-        
-        Write-Log -Message "WAARSCHUWING: Afbeeldingen-map wordt opgeschoond: $itemCount items (ouder dan $PicturesMaxAgeDays dagen)" -Level 'WARN'
-        $oldItems | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Log -Message "Afbeeldingen-map opgeschoond: $itemCount items verwijderd"
-        return $itemCount
-    } catch {
-        Write-Log -Message "Fout bij opschonen Afbeeldingen: $($_.Exception.Message)" -Level 'WARN'
-        return -1
-    }
-}
-
-function Clear-VideosFolder {
-    try {
-        # Gebruikt de Video's-map van de INGELOGDE gebruiker
-        # Bij scheduled task = de gebruiker die is ingelogd (via -UserId in task principal)
-        $videosPath = [Environment]::GetFolderPath('MyVideos')
-        if (-not (Test-Path $videosPath)) {
-            Write-Log -Message "Video's-map niet gevonden"
-            return 0
-        }
-        
-        # Filter op leeftijd (alleen bestanden ouder dan X dagen)
-        $cutoffDate = (Get-Date).AddDays(-$VideosMaxAgeDays)
-        $oldItems = Get-ChildItem $videosPath -Recurse -ErrorAction SilentlyContinue | 
-                    Where-Object { $_.LastWriteTime -lt $cutoffDate }
-        
-        $itemCount = ($oldItems | Measure-Object).Count
-        if ($itemCount -eq 0) {
-            Write-Log -Message "Video's-map: geen bestanden ouder dan $VideosMaxAgeDays dagen"
-            return 0
-        }
-        
-        Write-Log -Message "WAARSCHUWING: Video's-map wordt opgeschoond: $itemCount items (ouder dan $VideosMaxAgeDays dagen)" -Level 'WARN'
-        $oldItems | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Log -Message "Video's-map opgeschoond: $itemCount items verwijderd"
-        return $itemCount
-    } catch {
-        Write-Log -Message "Fout bij opschonen Video's: $($_.Exception.Message)" -Level 'WARN'
-        return -1
-    }
-}
-
-function Clear-MusicFolder {
-    try {
-        # Gebruikt de Muziek-map van de INGELOGDE gebruiker
-        # Bij scheduled task = de gebruiker die is ingelogd (via -UserId in task principal)
-        $musicPath = [Environment]::GetFolderPath('MyMusic')
-        if (-not (Test-Path $musicPath)) {
-            Write-Log -Message 'Muziek-map niet gevonden'
-            return 0
-        }
-        
-        # Filter op leeftijd (alleen bestanden ouder dan X dagen)
-        $cutoffDate = (Get-Date).AddDays(-$MusicMaxAgeDays)
-        $oldItems = Get-ChildItem $musicPath -Recurse -ErrorAction SilentlyContinue | 
-                    Where-Object { $_.LastWriteTime -lt $cutoffDate }
-        
-        $itemCount = ($oldItems | Measure-Object).Count
-        if ($itemCount -eq 0) {
-            Write-Log -Message "Muziek-map: geen bestanden ouder dan $MusicMaxAgeDays dagen"
-            return 0
-        }
-        
-        Write-Log -Message "WAARSCHUWING: Muziek-map wordt opgeschoond: $itemCount items (ouder dan $MusicMaxAgeDays dagen)" -Level 'WARN'
-        $oldItems | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Log -Message "Muziek-map opgeschoond: $itemCount items verwijderd"
-        return $itemCount
-    } catch {
-        Write-Log -Message "Fout bij opschonen Muziek: $($_.Exception.Message)" -Level 'WARN'
+        Write-Log -Message "Fout bij opschonen ${displayName}: $($_.Exception.Message)" -Level 'WARN'
         return -1
     }
 }
 
 function Clear-OldBackups {
     try {
-        # AVG: Verwijder backups ouder dan retentieperiode
+        $removedCount = 0
+        $failedCount = 0
+        
+        # Stap 1: AVG - Verwijder backups ouder dan retentieperiode
         $cutoffDate = (Get-Date).AddDays(-$LogRetentionDays)
         $oldBackups = Get-ChildItem -Path $HiddenFolderPath -Filter 'backup_*' -ErrorAction SilentlyContinue |
             Where-Object { $_.CreationTime -lt $cutoffDate }
         
-        $removedCount = 0
-        foreach ($backup in $oldBackups) {
-            try {
-                Remove-Item $backup.FullName -Force -ErrorAction Stop
-                $removedCount++
-                Write-Log -Message "AVG: Oude backup verwijderd na $LogRetentionDays dagen" -SkipEventLog
-            } catch {
-                Write-Log -Message "Fout bij verwijderen backup: $($_.Exception.Message)" -Level 'WARN'
+        if ($oldBackups) {
+            foreach ($backup in $oldBackups) {
+                try {
+                    Remove-Item $backup.FullName -Force -ErrorAction Stop
+                    $removedCount++
+                    Write-Log -Message "AVG: Oude backup verwijderd na $LogRetentionDays dagen" -SkipEventLog
+                } catch {
+                    $failedCount++
+                    Write-Log -Message "Fout bij verwijderen backup $($backup.Name): $($_.Exception.Message)" -Level 'WARN'
+                }
+            }
+            $msg = "Oude script-backups verwijderd: $removedCount items (ouder dan $LogRetentionDays dagen)"
+            if ($failedCount -gt 0) { $msg += " - $failedCount gefaald" }
+            Write-Log -Message $msg
+        }
+
+        # Stap 2: Enforce maximaal aantal backups (0 = geen limiet) - ALTIJD uitvoeren onafhankelijk van retentie
+        if ($MaxBackupCount -gt 0) {
+            $allBackups = @(Get-ChildItem -Path $HiddenFolderPath -Filter 'backup_*' -ErrorAction SilentlyContinue |
+                Sort-Object -Property CreationTime -Descending)
+            
+            if ($allBackups.Count -gt $MaxBackupCount) {
+                $toPurge = $allBackups | Select-Object -Skip $MaxBackupCount
+                $purgeCount = 0
+                foreach ($b in $toPurge) {
+                    try {
+                        Remove-Item $b.FullName -Force -ErrorAction Stop
+                        $removedCount++
+                        $purgeCount++
+                        Write-Log -Message "Backup verwijderd (limiet enforcement): $($b.Name)" -SkipEventLog
+                    } catch {
+                        $failedCount++
+                    }
+                }
+                $msg = "Backuplimiet toegepast: max $MaxBackupCount, extra verwijderd: $purgeCount"
+                if ($failedCount -gt 0) { $msg += " ($failedCount gefaald)" }
+                Write-Log -Message $msg
             }
         }
         
-        if ($removedCount -gt 0) {
-            Write-Log -Message "Oude script-backups verwijderd: $removedCount items (ouder dan $LogRetentionDays dagen)"
+        if ($removedCount -eq 0) {
+            if ($MaxBackupCount -gt 0) {
+                Write-Log -Message "Backup opschoning voltooid: geen items verwijderd (retentie/limiet ok)"
+            } else {
+                Write-Log -Message "Geen oude backups gevonden (retentie: $LogRetentionDays dagen)"
+            }
         }
+        
         return $removedCount
     } catch {
         Write-Log -Message "Fout bij opschonen oude backups: $($_.Exception.Message)" -Level 'WARN'
@@ -806,10 +905,20 @@ function Restore-FirewallDefaults {
                 $s = Get-Service -Name $svc -ErrorAction Stop
                 if ($s.Status -ne 'Running') {
                     Start-Service -Name $svc -ErrorAction Stop
-                    Write-Log -Message "Service gestart: $svc"
+                    # Wacht tot service echt draait
+                    $timeout = 0
+                    while ((Get-Service -Name $svc).Status -ne 'Running' -and $timeout -lt 30) {
+                        Start-Sleep -Milliseconds 100
+                        $timeout++
+                    }
+                    if ((Get-Service -Name $svc).Status -eq 'Running') {
+                        Write-Log -Message "Service gestart en geverifieerd: $svc"
+                    } else {
+                        Write-Log -Message "Service start timeout: $svc" -Level 'WARN'
+                    }
                 }
             } catch {
-                Write-Log -Message ("Service $svc kan niet worden gestart: {0}" -f $_.Exception.Message) -Level 'WARN'
+                Write-Log -Message ("Service {0} kan niet worden gestart: {1}" -f $svc, $_.Exception.Message) -Level 'WARN'
             }
         }
 
@@ -928,9 +1037,11 @@ function Get-ActualUserDesktop {
         $quser = query user 2>$null | Select-Object -Skip 1
         foreach ($line in $quser) {
             # Parse quser output: USERNAME SESSIONNAME ID STATE IDLE TIME LOGON TIME
-            if ($line -match '^\s*(\S+)\s+console') {
-                $userName = $Matches[1].Trim()
-                $userProfile = Join-Path 'C:\Users' $userName
+            # Let op: actieve sessie heeft > voor username (bijv: ">gebruiker")
+            if ($line -match '^\s*>?(\S+)\s+(console|\s+)') {
+                $userName = $Matches[1].Trim().TrimStart('>')
+                $usersRoot = Join-Path $env:SystemDrive 'Users'
+                $userProfile = Join-Path $usersRoot $userName
                 $testDesktop = Join-Path $userProfile 'Desktop'
                 if (Test-Path $testDesktop) {
                     # AVG: Log alleen methode, geen username
@@ -956,7 +1067,7 @@ function Get-ActualUserDesktop {
                 $userName = $loggedOnUser
             }
             
-            $userProfile = Join-Path 'C:\Users' $userName
+            $userProfile = Join-Path $env:SystemDrive "Users\$userName"
             $testDesktop = Join-Path $userProfile 'Desktop'
             if (Test-Path $testDesktop) {
                 # AVG: Log alleen methode, geen username
@@ -1170,6 +1281,7 @@ ${provSkipped} = @()
 
 try {
     Initialize-Environment
+    Test-Configuration  # Valideer configuratie bij start
     Write-Log -Message "START opschoning leenlaptop (versie $ScriptVersion)"
     
     if (-not $IsAdmin) {
@@ -1195,8 +1307,20 @@ Voor volledige functionaliteit: Start als administrator
     } -ArgumentList $MaxExecutionMinutes
     
     try {
+        $currentStep = 0
+        $totalSteps = 11  # Totaal aantal mogelijke stappen
+        
+        # Stap 1: Script kopiëren
+        Write-Progress -Activity "Leenlaptop opschoning" -Status "Script installeren..." -PercentComplete (++$currentStep / $totalSteps * 100)
         $destPath = Copy-ScriptToHidden
         
+        # Valideer dat script succesvol is gekopieerd
+        if ([string]::IsNullOrEmpty($destPath) -or -not (Test-Path $destPath)) {
+            throw "Script kon niet naar verborgen map worden gekopieerd. Pad: $destPath"
+        }
+        
+        # Stap 2: Browser opschoning
+        Write-Progress -Activity "Leenlaptop opschoning" -Status "Browsers opschonen..." -PercentComplete (++$currentStep / $totalSteps * 100)
         # Browser opschoning (indien ingeschakeld)
         if ($EnableBrowserCleanup -and $BrowserList -and $BrowserList.Count -gt 0) {
             # Stop browsers met retry-logica
@@ -1221,6 +1345,8 @@ Voor volledige functionaliteit: Start als administrator
             $skippedSteps += 'Browser opschoning (uitgeschakeld in configuratie)'
         }
         
+        # Stap 3: Wi-Fi profielen
+        Write-Progress -Activity "Leenlaptop opschoning" -Status "Wi-Fi profielen opschonen..." -PercentComplete (++$currentStep / $totalSteps * 100)
         # Wi-Fi profielen (indien ingeschakeld)
         if ($EnableWiFiCleanup) {
             $wifiResult = Clear-WiFiProfiles
@@ -1241,6 +1367,8 @@ Voor volledige functionaliteit: Start als administrator
             $skippedSteps += 'Wi-Fi profielen (uitgeschakeld in configuratie)'
         }
         
+        # Stap 4: Temp bestanden
+        Write-Progress -Activity "Leenlaptop opschoning" -Status "Tijdelijke bestanden verwijderen..." -PercentComplete (++$currentStep / $totalSteps * 100)
         # Temp bestanden
         if ($EnableTempCleanup) {
             $tempCount = Clear-TempFiles
@@ -1255,6 +1383,8 @@ Voor volledige functionaliteit: Start als administrator
             $skippedSteps += 'Tijdelijke bestanden (uitgeschakeld in configuratie)'
         }
         
+        # Stap 5: Downloads map
+        Write-Progress -Activity "Leenlaptop opschoning" -Status "Downloads opschonen..." -PercentComplete (++$currentStep / $totalSteps * 100)
         # Downloads map
         if ($EnableDownloadsCleanup) {
             $dlCount = Clear-DownloadsFolder
@@ -1269,9 +1399,11 @@ Voor volledige functionaliteit: Start als administrator
             $skippedSteps += 'Downloads-map (uitgeschakeld in configuratie)'
         }
         
+        # Stap 6: Documenten map
+        Write-Progress -Activity "Leenlaptop opschoning" -Status "Documenten controleren..." -PercentComplete (++$currentStep / $totalSteps * 100)
         # Documenten map (VOORZICHTIG!)
         if ($EnableDocumentsCleanup) {
-            $docCount = Clear-DocumentsFolder
+            $docCount = Clear-UserFolder -FolderType 'MyDocuments' -MaxAgeDays $DocumentsMaxAgeDays -ShowWarning
             if ($docCount -gt 0) {
                 $completedSteps += "Documenten-map geleegd ($docCount items verwijderd)"
             } elseif ($docCount -eq 0) {
@@ -1283,9 +1415,11 @@ Voor volledige functionaliteit: Start als administrator
             $skippedSteps += 'Documenten-map (uitgeschakeld in configuratie)'
         }
         
+        # Stap 7: Afbeeldingen map
+        Write-Progress -Activity "Leenlaptop opschoning" -Status "Afbeeldingen controleren..." -PercentComplete (++$currentStep / $totalSteps * 100)
         # Afbeeldingen map (VOORZICHTIG!)
         if ($EnablePicturesCleanup) {
-            $picCount = Clear-PicturesFolder
+            $picCount = Clear-UserFolder -FolderType 'MyPictures' -MaxAgeDays $PicturesMaxAgeDays -ShowWarning
             if ($picCount -gt 0) {
                 $completedSteps += "Afbeeldingen-map geleegd ($picCount items verwijderd)"
             } elseif ($picCount -eq 0) {
@@ -1297,9 +1431,11 @@ Voor volledige functionaliteit: Start als administrator
             $skippedSteps += 'Afbeeldingen-map (uitgeschakeld in configuratie)'
         }
         
+        # Stap 8: Video's map
+        Write-Progress -Activity "Leenlaptop opschoning" -Status "Video's controleren..." -PercentComplete (++$currentStep / $totalSteps * 100)
         # Video's map (VOORZICHTIG!)
         if ($EnableVideosCleanup) {
-            $vidCount = Clear-VideosFolder
+            $vidCount = Clear-UserFolder -FolderType 'MyVideos' -MaxAgeDays $VideosMaxAgeDays -ShowWarning
             if ($vidCount -gt 0) {
                 $completedSteps += "Video's-map geleegd ($vidCount items verwijderd)"
             } elseif ($vidCount -eq 0) {
@@ -1311,9 +1447,11 @@ Voor volledige functionaliteit: Start als administrator
             $skippedSteps += "Video's-map (uitgeschakeld in configuratie)"
         }
         
+        # Stap 9: Muziek map
+        Write-Progress -Activity "Leenlaptop opschoning" -Status "Muziek controleren..." -PercentComplete (++$currentStep / $totalSteps * 100)
         # Muziek map (VOORZICHTIG!)
         if ($EnableMusicCleanup) {
-            $musCount = Clear-MusicFolder
+            $musCount = Clear-UserFolder -FolderType 'MyMusic' -MaxAgeDays $MusicMaxAgeDays -ShowWarning
             if ($musCount -gt 0) {
                 $completedSteps += "Muziek-map geleegd ($musCount items verwijderd)"
             } elseif ($musCount -eq 0) {
@@ -1339,6 +1477,8 @@ Voor volledige functionaliteit: Start als administrator
             $skippedSteps += 'Oude script-backups (uitgeschakeld in configuratie)'
         }
         
+        # Stap 10: Firewall reset
+        Write-Progress -Activity "Leenlaptop opschoning" -Status "Firewall resetten..." -PercentComplete (++$currentStep / $totalSteps * 100)
         if ($EnableFirewallReset) {
             $fwOk = Invoke-WithRetry -ScriptBlock { Restore-FirewallDefaults } -OperationName "Firewall reset"
             if ($fwOk) {
@@ -1350,6 +1490,8 @@ Voor volledige functionaliteit: Start als administrator
             $skippedSteps += 'Firewall reset (uitgeschakeld in configuratie)'
         }
         
+        # Stap 11: Voorzieningen installeren
+        Write-Progress -Activity "Leenlaptop opschoning" -Status "Voorzieningen installeren..." -PercentComplete (++$currentStep / $totalSteps * 100)
         # Beheer opstarttaak (aan/uit/verwijderen)
         $taskResult = Set-StartupTask -ScriptPath $destPath
         if ($EnableStartupTask) {
@@ -1388,6 +1530,9 @@ Voor volledige functionaliteit: Start als administrator
         }
         
         # Check of we binnen de tijd zijn gebleven
+        Write-Progress -Activity "Leenlaptop opschoning" -Status "Afronden..." -PercentComplete 100
+        Start-Sleep -Milliseconds 500  # Laat 100% even zichtbaar
+        Write-Progress -Activity "Leenlaptop opschoning" -Completed
         $elapsed = (Get-Date) - $startTime
         if ($elapsed.TotalMinutes -gt $MaxExecutionMinutes) {
             throw "Maximale uitvoeringstijd ($MaxExecutionMinutes minuten) overschreden"
@@ -1414,7 +1559,6 @@ Voor volledige functionaliteit: Start als administrator
     
     Show-CompletionStatus -Success $executionSuccessful -ErrorMessage $errorDetails -ExecutionTimeSeconds $totalSeconds -CompletedItems $completedSteps -SkippedItems $skippedSteps -ProvisioningCompleted $provCompleted -ProvisioningSkipped $provSkipped
     
-    if (-not $executionSuccessful) {
-        exit 1
-    }
+    # Exit code: 0 = success, 1 = error (PS 5.1 compatible: use if instead of ternary)
+    if ($executionSuccessful) { exit 0 } else { exit 1 }
 }
