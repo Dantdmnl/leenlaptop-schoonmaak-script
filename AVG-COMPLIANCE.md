@@ -1,9 +1,9 @@
 # AVG Compliance Documentatie
 ## Leenlaptop Opschoningsscript - Privacy & Gegevensbescherming
 
-**Document versie**: 1.2  
-**Datum**: 7 december 2025  
-**Script versie**: 1.6.1  
+**Document versie**: 1.3  
+**Datum**: 14 januari 2026  
+**Script versie**: 1.6.2  
 **Verantwoordelijke**: ICT-beheerder
 
 ---
@@ -225,13 +225,14 @@ Get-EventLog -LogName Application -Source "OpstartScript" -Newest 10
 | 1.5.0 (Doc 1.0) | 2025-10-23 | Initiële AVG-compliance implementatie | Volledig herziening voor privacy |
 | 1.6.0 (Doc 1.1) | 2025-11-03 | Volledig configureerbare opschoning + media-mappen + desktop detectie | Geen - blijft AVG-compliant |
 | 1.6.1 (Doc 1.2) | 2025-12-07 | Hybrid browser cleanup + credentials/sync-data verwijdering | Verbeterd - meer privacy (account data verwijderd) |
+| 1.6.2 (Doc 1.3) | 2026-01-14 | MaxBackupCount + SHA256 verificatie + config validatie + backup cleanup logging | Geen - blijft AVG-compliant |
 
-### Document Versie 1.2 (Script v1.6.1) - AVG Analyse
-**Nieuwe functionaliteit**: 
-1. Hybrid browser cleanup strategie (volledig profiel verwijderen → granulaire fallback)
-2. Credentials en sync-data verwijdering (Login Data, Preferences, Sync Data)
-3. Firefox Account en Google/Microsoft Account data verwijdering
-4. Verbeterde backup cleanup met statusrapportage
+### Document Versie 1.3 (Script v1.6.2) - AVG Analyse
+**Nieuwe functionaliteit (v1.6.2)**:
+1. **MaxBackupCount** - Limiet aantal script backups (standaard 5, vermindert opslagverspilling)
+2. **SHA256 Hash Verificatie** - Script integriteit check na kopieën (verhoogt beveiliging)
+3. **Configuratie Validatie** - Test-Configuration functie valideert alle instellingen bij start
+4. **Backup Cleanup Logging** - Rapporteert hoeveel backups verwijderd/bewaard (operationeel inzicht)
 
 **Privacy Impact Assessment per feature**:
 
@@ -276,14 +277,72 @@ Write-Log "Wi-Fi opschoning: 3 verwijderd, 1 behouden"
 
 ---
 
+## 10b. Privacy Impact: v1.6.2 Features
+
+**SHA256 Hash Verificatie:**
+```powershell
+# ✅ AVG-CONFORM: Verificatie zonder PII
+$expectedHash = '...'  # Pre-calculated hash
+$actualHash = (Get-FileHash $scriptPath -Algorithm SHA256).Hash
+if ($expectedHash -eq $actualHash) {
+    Write-Log "Script gekopieerd naar verborgen map (SHA256 OK)" -SkipEventLog
+}
+```
+- Verifieert script integriteit (tegen ongewenste wijzigingen)
+- Logt alleen verificatieresultaat (OK/FAILED), geen hashes
+- Verhoogt beveiliging zonder privacy-impact
+- **AVG Impact**: GEEN - voegt geen PII toe
+
+**MaxBackupCount Cleanup:**
+```powershell
+# ✅ AVG-CONFORM: Automatische opschoningimplementatie
+# Beperkt aantal oude backups, verwijdert rest
+$removedCount = 0
+Get-ChildItem -Filter 'opstart-script_*.ps1' |
+    Sort-Object CreationTime -Descending |
+    Select-Object -Skip $MaxBackupCount |
+    Remove-Item -Force
+    
+Write-Log "Backups opgeschoond: $removedCount verwijderd, $keptCount bewaard (MaxBackupCount)"
+```
+- Beperkt aantal script backups (standaard 5)
+- Minimaliseert opslagverspilling van verouderde versies
+- Logt alleen aantallen, geen individuele bestandsnamen of versies
+- Respecteert 30-dagen retentieperiode (combinatie MaxBackupCount EN tijd)
+- **AVG Impact**: POSITIEF - minimaliseert opslaggebruik, aanhoudende cleanup
+
+**Configuratie Validatie:**
+```powershell
+# ✅ AVG-CONFORM: Validatie tegen mis-configuratie
+Test-Configuration  # Voort uit bij start, voordat processing
+Write-Log "Configuratie gevalideerd (PS 5.1+, instellingen OK)"
+
+# Controleert bijv.
+if ($LogRetentionDays -le 0) {
+    throw "LogRetentionDays moet > 0 zijn (AVG: minimum 30 dagen)"
+}
+```
+- Detecteert mis-configuraties die AVG-compliance schaden
+- Voorkomt accidentele privacy-inbreuken (bijv. retentie=0)
+- Foutmeldingen bevatten geen PII
+- **AVG Impact**: POSITIEF - forceert compliance checks
+
+**Conclusie v1.6.2:**
+Geen negatieve AVG-impact. Alle nieuwe features respecteren privacy-by-design:
+- ✅ Geen PII-logging toegevoegd
+- ✅ `-SkipEventLog` waar nodig
+- ✅ Automatische cleanup versterkt
+- ✅ Configuratie validatie verbetert compliance
+- ✅ Script blijft volledig AVG-compliant
+
+---
+
 ## 11. Contactinformatie
 
 **Privacy vragen**: ICT-beheerder  
 **Functionaris Gegevensbescherming**: [Indien van toepassing]  
 **Script auteur**: Ruben Draaisma  
-**Laatste review**: 3 november 2025
-
----
+**Laatste review**: 14 januari 2026
 
 ## Appendix A: Code Snippets ter Referentie
 
