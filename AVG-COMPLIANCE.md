@@ -1,388 +1,152 @@
-# AVG Compliance Documentatie
-## Leenlaptop Opschoningsscript - Privacy & Gegevensbescherming
+# AVG-compliance
 
-**Document versie**: 1.3  
-**Datum**: 14 januari 2026  
-**Script versie**: 1.6.2  
-**Verantwoordelijke**: ICT-beheerder
+## Leenlaptop Schoonmaak Script
 
----
+**Documentversie:** 1.4
+**Datum:** 2 juli 2026
+**Scriptversie:** 1.6.3
+**Verantwoordelijke:** ICT-beheerder
 
-## 1. Inleiding
+## 1. Doel en scope
 
-Dit document beschrijft hoe het leenlaptop opschoningsscript voldoet aan de Algemene Verordening Gegevensbescherming (AVG/GDPR). Het script is ontworpen volgens het **privacy-by-design** principe en minimaliseert de verwerking van persoonsgegevens.
+Dit document beschrijft de privacymaatregelen in het leenlaptop-schoonmaakscript. Het script wordt lokaal uitgevoerd op Windows-apparaten en is bedoeld om leenlaptops na gebruik opnieuw beschikbaar te maken zonder persoonsgegevens van vorige gebruikers achter te laten.
 
----
+De maatregelen in dit document richten zich op:
 
-## 2. Wettelijke Grondslag
+- dataminimalisatie;
+- beperkte logretentie;
+- lokale opslag;
+- beperkte toegang tot logs;
+- controleerbare uitvoering voor servicedesk en ICT.
 
-### Artikel 6 AVG - Rechtmatigheid van verwerking
-De verwerking is rechtmatig op basis van:
-- **Art. 6 lid 1 sub f**: Gerechtvaardigd belang voor ICT-beveiliging en systeembeheer
-- **Art. 6 lid 1 sub c**: Wettelijke verplichting (indien van toepassing bij overheidsinstellingen)
+## 2. Rechtsgrond en doelbinding
 
-### Doel van de verwerking
-- Waarborgen van IT-beveiliging
-- Beschermen van privacy van volgende gebruikers
-- Operationele continuïteit van leenlaptop-dienst
-- Audit trails voor troubleshooting
+De verwerking is gebaseerd op het gerechtvaardigd belang van ICT-beheer en informatiebeveiliging. In sommige organisaties kan daarnaast een wettelijke of beleidsmatige verplichting gelden voor veilig apparaatbeheer.
 
----
+Doelen:
 
-## 3. Gegevensminimalisatie (Art. 5 lid 1 sub c AVG)
+- beschermen van volgende gebruikers tegen achtergebleven data;
+- beperken van lokale privacy- en beveiligingsrisico's;
+- vastleggen of de opschoning technisch is gelukt;
+- ondersteunen van troubleshooting door ICT.
 
-### 3.1 Wat wordt NIET gelogd (design keuze)
-Het script logt **expliciet GEEN** persoonsgegevens zoals:
-- ❌ Gebruikersnamen
-- ❌ Wi-Fi netwerknamen (alleen aantallen)
-- ❌ Bestandsnamen met persoonlijke informatie
-- ❌ IP-adressen
-- ❌ Browser geschiedenis of URLs
-- ❌ Account informatie
+Het script is niet bedoeld voor gebruikersmonitoring.
 
-### 3.2 Wat wordt WEL gelogd (minimaal noodzakelijk)
-Het script logt alleen operationele informatie:
-- ✅ Tijdstempel van operaties
-- ✅ Soort operatie (bijv. "Browser gestopt")
-- ✅ Aantallen (bijv. "3 processen gestopt")
-- ✅ Foutcodes en technische statusmeldingen
-- ✅ Script versie
-- ✅ SUCCES/FAIL status
+## 3. Gegevensminimalisatie
 
-### 3.3 Code voorbeelden
+Het script logt geen inhoudelijke gebruikersdata. De log bevat alleen operationele gegevens.
 
-**FOUT (oude versie - bevat PII):**
-```powershell
-# ❌ NIET AVG-conform
-Write-Log "Gebruiker $env:USERNAME heeft browser chrome gesloten"
-Write-Log "Wi-Fi profiel 'Thuis_Netwerk' verwijderd"
-```
+Niet gelogd:
 
-**CORRECT (huidige versie - geen PII):**
-```powershell
-# ✅ AVG-conform
-Write-Log "Browser gestopt: chrome (3 processen)"
-Write-Log "Wi-Fi opschoning: 5 verwijderd, 1 behouden"
-```
+- gebruikersnamen;
+- bestandsnamen;
+- browsergeschiedenis of URL's;
+- IP-adressen;
+- Wi-Fi-netwerknamen in Windows Event Log;
+- accountinformatie.
 
----
+Wel gelogd:
 
-## 4. Opslagbeperking (Art. 5 lid 1 sub e AVG)
+- tijdstip;
+- type actie;
+- aantallen verwijderde items;
+- foutmeldingen zonder persoonsgegevens;
+- scriptversie;
+- eindstatus.
 
-### 4.1 Retentiebeleid
-
-| Data Type | Retentieperiode | Rechtsgrond |
-|-----------|-----------------|-------------|
-| **Operationele logs** | 30 dagen | Troubleshooting, beveiliging |
-| **Gearchiveerde logs** | 30 dagen | Audit trail |
-| **Script backups** | 30 dagen | Herstel na fouten |
-| **Status bestanden** | Tot volgende run | Operationele noodzaak |
-
-### 4.2 Automatische verwijdering
-Het script bevat **automatische cleanup-mechanismen**:
+Voorbeeld:
 
 ```powershell
-# Automatische verwijdering van oude logs (dagelijks uitgevoerd)
-function Backup-Log {
-    $cutoffDate = (Get-Date).AddDays(-$LogRetentionDays)  # 30 dagen
-    Get-ChildItem -Filter 'script_*.log' |
-        Where-Object { $_.CreationTime -lt $cutoffDate } |
-        Remove-Item -Force
-}
+Write-Log "Wi-Fi opschoning voltooid: 5 verwijderd, 1 behouden"
 ```
 
-**Verificatie**: Controleer `$LogRetentionDays` variabele in script (standaard: 30)
+Gevoelige detailmeldingen worden niet naar Windows Event Log geschreven wanneer `-SkipEventLog` wordt gebruikt.
 
----
+## 4. Opslag en retentie
 
-## 5. Integriteit en Vertrouwelijkheid (Art. 32 AVG)
+| Gegeven | Locatie | Retentie |
+|---------|---------|----------|
+| Actuele log | `C:\ProgramData\LeenlaptopSchoonmaak\log.txt` | Tot rotatie |
+| Gearchiveerde logs | `script_YYYYMMDD_HHMMSS.log` | 30 dagen standaard |
+| Scriptbackups | `backup_YYYYMMDD_HHMMSS_*.ps1` | 30 dagen en maximaal 5 standaard |
+| Laatste status | `laatste_status.txt` | Tot volgende run |
 
-### 5.1 Toegangsbeveiliging
+Retentie is configureerbaar via:
 
-| Beveiligingsmaatregel | Implementatie |
-|----------------------|---------------|
-| **Bestandslocatie** | `%LOCALAPPDATA%\HiddenScripts` (verborgen, per gebruiker) |
-| **NTFS-rechten** | Alleen lokale gebruiker + ICT-admins |
-| **Verborgen attribuut** | Map gemarkeerd als "Hidden" |
-| **Schrijfrechten** | Alleen script zelf en admins |
-
-### 5.2 Event Log Filtering
 ```powershell
-# Privacy-filter: gevoelige berichten niet naar Event Log
-Write-Log "Wi-Fi profiel verwijderd" -SkipEventLog  # Lokaal wel, Event Log niet
+[int] $LogRetentionDays = 30
+[int] $MaxBackupCount   = 5
 ```
 
-Rationale: Windows Event Log kan toegankelijk zijn voor meer gebruikers dan lokale logs.
+## 5. Toegang en beveiliging
 
-### 5.3 Geen externe communicatie
-Het script:
-- ❌ Stuurt GEEN data naar externe servers
-- ❌ Gebruikt GEEN netwerk verbindingen voor logging
-- ❌ Deelt GEEN informatie met derden
-- ✅ Werkt volledig lokaal op het apparaat
+De bestanden staan onder:
 
----
+```text
+C:\ProgramData\LeenlaptopSchoonmaak
+```
 
-## 6. Rechten van Betrokkenen (Art. 15-22 AVG)
+De map wordt verborgen gemaakt. Toegang hoort beperkt te zijn tot lokale beheerders, systeembeheer en ICT-medewerkers die verantwoordelijk zijn voor apparaatbeheer. Controle van NTFS-rechten blijft een beheermaatregel buiten het script.
 
-### 6.1 Transparantie (Art. 13-14)
-- ✅ Script-doel wordt gecommuniceerd via README en documentatie
-- ✅ Gebruikers worden geïnformeerd bij uitgifte leenlaptop
-- ✅ Logbestanden zijn leesbaar (plain text, geen encryptie)
+Het script communiceert niet met externe diensten voor logging of rapportage. Alle logs blijven lokaal op het apparaat.
 
-### 6.2 Inzagerecht (Art. 15)
-Omdat het script **geen persoonsgegevens logt**, is er feitelijk niets in te zien.
-Bij vragen kunnen gebruikers logs opvragen bij ICT, maar deze bevatten geen PII.
+## 6. Event Log
 
-### 6.3 Recht op verwijdering (Art. 17)
-- ✅ Automatisch na 30 dagen
-- ✅ Handmatig door ICT op verzoek mogelijk
-- ✅ Geen backups buiten retentieperiode
+Het script schrijft operationele statusmeldingen naar het Windows Application Log met bron `LeenlaptopSchoonmaak`. Berichten die mogelijk herleidbare details kunnen bevatten, worden alleen lokaal gelogd en overgeslagen voor Event Log.
 
----
+Voor controle:
 
-## 7. Verwerkersverantwoordelijkheden
+```powershell
+Get-EventLog -LogName Application -Source "LeenlaptopSchoonmaak" -Newest 10
+```
 
-### 7.1 ICT-afdeling taken
-1. **Toegangsbeheer**: Regelmatig controleren wie toegang heeft tot log-locaties
-2. **Monitoring**: Periodiek controleren of retentie correct werkt
-3. **Updates**: Script up-to-date houden met security patches
-4. **Training**: Gebruikers instrueren over privacy-aspecten
+## 7. Rechten van betrokkenen
 
-### 7.2 Audit-vragen bij inspectie
-Bij AVG-audit kunnen volgende vragen worden gesteld:
+Omdat het script geen persoonsgegevens in de operationele log hoort vast te leggen, is de hoeveelheid inzage- of verwijderbare data beperkt. Als een gebruiker vragen stelt, kan ICT de lokale logs controleren en toelichten welke technische acties zijn uitgevoerd.
 
-**Q: Welke persoonsgegevens worden verwerkt?**  
-A: Geen directe persoonsgegevens. Alleen operationele metadata (tijden, aantallen).
+Handmatige verwijdering van logs kan door ICT worden uitgevoerd wanneer beleid of een verzoek daartoe aanleiding geeft.
 
-**Q: Hoe lang worden logs bewaard?**  
-A: Maximaal 30 dagen, daarna automatisch verwijderd.
+## 8. Risicoanalyse
 
-**Q: Wie heeft toegang tot logs?**  
-A: Alleen ICT-beheerders met beheersrechten op betreffend apparaat.
-
-**Q: Worden logs gedeeld met derden?**  
-A: Nee, volledig lokaal opgeslagen, geen externe toegang.
-
-**Q: Hoe wordt verwijdering gegarandeerd?**  
-A: Automatisch via script-logica, dagelijks gecontroleerd tijdens uitvoering.
-
----
-
-## 8. Risicoanalyse (DPIA Light)
-
-### 8.1 Privacy Risico's
-
-| Risico | Kans | Impact | Mitigatie |
+| Risico | Kans | Impact | Maatregel |
 |--------|------|--------|-----------|
-| Logs bevatten PII | Laag | Hoog | Code review, unit tests, `-SkipEventLog` flag |
-| Onbevoegde toegang logs | Laag | Gemiddeld | NTFS-rechten, verborgen map |
-| Logs te lang bewaard | Zeer laag | Laag | Automatische cleanup + monitoring |
-| Logs gekopieerd voor backup | Laag | Gemiddeld | Alleen ICT toegang, geen automatische backups |
+| Log bevat persoonsgegevens | Laag | Hoog | Geen bestandsnamen/gebruikersnamen loggen, `-SkipEventLog` voor detailmeldingen |
+| Onbevoegde toegang tot logs | Laag | Gemiddeld | Opslag onder `C:\ProgramData`, beheer via NTFS-rechten |
+| Logs blijven te lang staan | Laag | Laag | Automatische retentie op logs en backups |
+| Te agressieve folder-cleanup | Laag | Hoog | Documenten/media standaard uit, leeftijdsfilter, lege-mappenlogica |
 
-### 8.2 Restrisico
-**ACCEPTABEL** - Operationele logs zonder PII vormen minimaal privacy-risico.
+Restrisico: acceptabel bij correcte configuratie en periodieke controle door ICT.
 
----
+## 9. Controlepunten voor beheer
 
-## 9. Documentatie & Verificatie
-
-### 9.1 Verificatie Checklist
-Gebruik deze checklist om AVG-compliance te controleren:
+Periodieke controle:
 
 ```powershell
-# 1. Controleer configuratie
-$config = Get-Content "opstart-script.ps1" -Raw
-$config -match '\$LogRetentionDays\s*=\s*30'  # Moet $true zijn
+# Configuratie controleren
+Select-String -Path "C:\ProgramData\LeenlaptopSchoonmaak\LeenlaptopSchoonmaak.ps1" -Pattern "LogRetentionDays|MaxBackupCount"
 
-# 2. Controleer geen oude logs
-$logFolder = "$env:LOCALAPPDATA\HiddenScripts"
-Get-ChildItem $logFolder -Filter "script_*.log" | 
+# Oude logs controleren
+Get-ChildItem "C:\ProgramData\LeenlaptopSchoonmaak" -Filter "script_*.log" |
     Where-Object { $_.CreationTime -lt (Get-Date).AddDays(-31) }
-# Moet leeg zijn
 
-# 3. Controleer laatste log op PII
-$logContent = Get-Content "$logFolder\script.log" -Tail 50
-# Moet GEEN gebruikersnamen, netwerknamen, emails bevatten
-
-# 4. Test Event Log filtering
-Get-EventLog -LogName Application -Source "OpstartScript" -Newest 10
-# Controleer of gevoelige berichten -SkipEventLog flag gebruiken
+# Recente status controleren
+Get-Content "C:\ProgramData\LeenlaptopSchoonmaak\laatste_status.txt"
 ```
 
-### 9.2 Periodieke Review
-- **Frequentie**: Elk kwartaal
-- **Verantwoordelijke**: ICT Security Officer
-- **Onderdelen**: Code review, log analyse, toegangscontrole
-
----
+Aanbevolen frequentie: elk kwartaal of na elke inhoudelijke release.
 
 ## 10. Wijzigingshistorie
 
-| Versie | Datum | Wijziging | AVG Impact |
-|--------|-------|-----------|------------|
-| 1.4.1 | 2025-10-03 | Pre-AVG versie | Bevatte PII in logs (niet compliant) |
-| 1.5.0 (Doc 1.0) | 2025-10-23 | Initiële AVG-compliance implementatie | Volledig herziening voor privacy |
-| 1.6.0 (Doc 1.1) | 2025-11-03 | Volledig configureerbare opschoning + media-mappen + desktop detectie | Geen - blijft AVG-compliant |
-| 1.6.1 (Doc 1.2) | 2025-12-07 | Hybrid browser cleanup + credentials/sync-data verwijdering | Verbeterd - meer privacy (account data verwijderd) |
-| 1.6.2 (Doc 1.3) | 2026-01-14 | MaxBackupCount + SHA256 verificatie + config validatie + backup cleanup logging | Geen - blijft AVG-compliant |
+| Scriptversie | Datum | Relevante wijziging | Privacy-impact |
+|--------------|-------|---------------------|----------------|
+| 1.5.0 | 2025-10-23 | Eerste AVG-gerichte herziening | PII-logging verwijderd |
+| 1.6.0 | 2025-11-03 | Verplaatsing naar `C:\ProgramData`, configureerbare cleanup | Geen negatieve impact |
+| 1.6.1 | 2025-12-07 | Verbeterde browsercleanup | Positief, meer lokale accountdata verwijderd |
+| 1.6.2 | 2026-01-14 | Backuplimiet, hashcontrole, configuratievalidatie | Positief, betere integriteit en opslagbeperking |
+| 1.6.3 | 2026-07-02 | Veiligere leeftijdsfiltering en documentatiecorrecties | Positief, lager risico op onbedoeld dataverlies |
 
-### Document Versie 1.3 (Script v1.6.2) - AVG Analyse
-**Nieuwe functionaliteit (v1.6.2)**:
-1. **MaxBackupCount** - Limiet aantal script backups (standaard 5, vermindert opslagverspilling)
-2. **SHA256 Hash Verificatie** - Script integriteit check na kopieën (verhoogt beveiliging)
-3. **Configuratie Validatie** - Test-Configuration functie valideert alle instellingen bij start
-4. **Backup Cleanup Logging** - Rapporteert hoeveel backups verwijderd/bewaard (operationeel inzicht)
+## 11. Contact
 
-**Privacy Impact Assessment per feature**:
-
-**1. Desktop Detectie (Get-ActualUserDesktop)**
-```powershell
-# ❌ VERMEDEN: Username logging
-# Get-ActualUserDesktop detecteert gebruiker maar logt geen naam
-
-# ✅ GEÏMPLEMENTEERD: Alleen methode logging
-Write-Log "Desktop bepaald via actieve console sessie" -SkipEventLog
-# Geen username, gebruik -SkipEventLog voor extra privacy
-```
-- Detecteert gebruiker via query user/WMI maar logt **GEEN** username
-- Gebruikt `-SkipEventLog` flag voor extra privacy
-- Fallback naar Public Desktop (geen gebruikersspecifieke data)
-
-**2. Media-mappen Opschoning (Pictures/Videos/Music)**
-```powershell
-# ✅ AVG-CONFORM: Alleen aantallen, geen bestandsnamen
-Write-Log "Afbeeldingen-map geleegd (45 items verwijderd)"
-# Geen bestandsnamen of gebruikersspecifieke informatie
-```
-- Logt alleen **aantallen**, geen bestandsnamen of paden
-- WAARSCHUWING melding in log (bevat geen PII)
-- Standaard **uitgeschakeld** (opt-in voor privacy)
-
-**3. Verbeterde Status Rapportage**
-```powershell
-# ✅ AVG-CONFORM: Alleen statistieken
-Write-Log "Wi-Fi opschoning: 3 verwijderd, 1 behouden"
-# Geen netwerknamen, alleen aantallen
-```
-- Wi-Fi rapportage zonder netwerknamen (alleen counts)
-- Browser lijst zonder gebruikersprofielen
-- Alle statistieken geaggregeerd zonder PII
-
-**Conclusie**: Geen AVG-impact. Script blijft volledig compliant.
-- Alle nieuwe functies respecteren privacy-by-design principe
-- Geen PII-logging toegevoegd
-- `-SkipEventLog` gebruikt waar relevant
-- Media-opschoning standaard uitgeschakeld (veilig)
-
----
-
-## 10b. Privacy Impact: v1.6.2 Features
-
-**SHA256 Hash Verificatie:**
-```powershell
-# ✅ AVG-CONFORM: Verificatie zonder PII
-$expectedHash = '...'  # Pre-calculated hash
-$actualHash = (Get-FileHash $scriptPath -Algorithm SHA256).Hash
-if ($expectedHash -eq $actualHash) {
-    Write-Log "Script gekopieerd naar verborgen map (SHA256 OK)" -SkipEventLog
-}
-```
-- Verifieert script integriteit (tegen ongewenste wijzigingen)
-- Logt alleen verificatieresultaat (OK/FAILED), geen hashes
-- Verhoogt beveiliging zonder privacy-impact
-- **AVG Impact**: GEEN - voegt geen PII toe
-
-**MaxBackupCount Cleanup:**
-```powershell
-# ✅ AVG-CONFORM: Automatische opschoningimplementatie
-# Beperkt aantal oude backups, verwijdert rest
-$removedCount = 0
-Get-ChildItem -Filter 'opstart-script_*.ps1' |
-    Sort-Object CreationTime -Descending |
-    Select-Object -Skip $MaxBackupCount |
-    Remove-Item -Force
-    
-Write-Log "Backups opgeschoond: $removedCount verwijderd, $keptCount bewaard (MaxBackupCount)"
-```
-- Beperkt aantal script backups (standaard 5)
-- Minimaliseert opslagverspilling van verouderde versies
-- Logt alleen aantallen, geen individuele bestandsnamen of versies
-- Respecteert 30-dagen retentieperiode (combinatie MaxBackupCount EN tijd)
-- **AVG Impact**: POSITIEF - minimaliseert opslaggebruik, aanhoudende cleanup
-
-**Configuratie Validatie:**
-```powershell
-# ✅ AVG-CONFORM: Validatie tegen mis-configuratie
-Test-Configuration  # Voort uit bij start, voordat processing
-Write-Log "Configuratie gevalideerd (PS 5.1+, instellingen OK)"
-
-# Controleert bijv.
-if ($LogRetentionDays -le 0) {
-    throw "LogRetentionDays moet > 0 zijn (AVG: minimum 30 dagen)"
-}
-```
-- Detecteert mis-configuraties die AVG-compliance schaden
-- Voorkomt accidentele privacy-inbreuken (bijv. retentie=0)
-- Foutmeldingen bevatten geen PII
-- **AVG Impact**: POSITIEF - forceert compliance checks
-
-**Conclusie v1.6.2:**
-Geen negatieve AVG-impact. Alle nieuwe features respecteren privacy-by-design:
-- ✅ Geen PII-logging toegevoegd
-- ✅ `-SkipEventLog` waar nodig
-- ✅ Automatische cleanup versterkt
-- ✅ Configuratie validatie verbetert compliance
-- ✅ Script blijft volledig AVG-compliant
-
----
-
-## 11. Contactinformatie
-
-**Privacy vragen**: ICT-beheerder  
-**Functionaris Gegevensbescherming**: [Indien van toepassing]  
-**Script auteur**: Ruben Draaisma  
-**Laatste review**: 14 januari 2026
-
-## Appendix A: Code Snippets ter Referentie
-
-### A.1 Logging zonder PII
-```powershell
-function Write-Log {
-    param(
-        [string]$Message,
-        [string]$Level = 'INFO',
-        [switch]$SkipEventLog  # Privacy flag
-    )
-    
-    # Lokaal loggen (meer detail toegestaan)
-    Add-Content -Path $LogFile -Value "$timestamp [$Level] $Message"
-    
-    # Event Log (alleen niet-PII)
-    if (-not $SkipEventLog) {
-        Write-EventLog ... -Message $Message
-    }
-}
-```
-
-### A.2 Automatische Retentie
-```powershell
-function Backup-Log {
-    # Rotatie bij grootte-limiet
-    if ((Get-Item $LogFile).Length / 1MB -ge $MaxLogSizeMB) {
-        Rename-Item -Path $LogFile -NewName "script_$(Get-Date -f 'yyyyMMdd_HHmmss').log"
-    }
-    
-    # AVG: Verwijder oude logs
-    $cutoffDate = (Get-Date).AddDays(-$LogRetentionDays)
-    Get-ChildItem -Filter 'script_*.log' |
-        Where-Object { $_.CreationTime -lt $cutoffDate } |
-        Remove-Item -Force
-}
-```
-
----
-
-**EINDE DOCUMENT**
-
-*Dit document is onderdeel van het technisch ontwerp voor het Leenlaptop Opschoningsproces en beschrijft de AVG-compliance maatregelen.*
+Privacyvragen: ICT-beheerder
+Functionaris Gegevensbescherming: invullen indien van toepassing
+Scriptbeheer: Ruben Draaisma

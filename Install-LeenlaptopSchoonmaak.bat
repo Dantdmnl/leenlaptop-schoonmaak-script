@@ -2,9 +2,9 @@
 setlocal enabledelayedexpansion
 
 :: ============================================================================
-:: Initial Setup Script voor Leenlaptop Opschoningsscript
-:: Versie: 1.6.2
-:: Datum: 2026-01-14
+:: Installatiescript voor Leenlaptop Schoonmaak
+:: Versie: 1.6.3
+:: Datum: 2026-07-02
 :: Doel: Eenvoudige en betrouwbare installatie vanaf USB-stick
 :: ============================================================================
 
@@ -14,8 +14,8 @@ echo.
 echo ========================================================================
 echo  LEENLAPTOP OPSCHONINGSSCRIPT - INSTALLATIE
 echo ========================================================================
-echo  Versie: 1.6.2
-echo  AVG-conform ^| Volledig configureerbaar
+echo  Versie: 1.6.3
+echo  Lokale opschoning ^| Configureerbaar
 echo ========================================================================
 echo.
 
@@ -30,8 +30,11 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-:: Definieer het PowerShell script pad
-set "scriptPath=%~dp0opstart-script.ps1"
+:: Definieer het PowerShell script pad. Nieuwe naam eerst, oude naam als fallback voor gemengde deploymappen.
+set "scriptPath=%~dp0LeenlaptopSchoonmaak.ps1"
+if not exist "!scriptPath!" (
+    set "scriptPath=%~dp0opstart-script.ps1"
+)
 
 :: Controleer of het PowerShell script bestaat
 if not exist "!scriptPath!" (
@@ -67,8 +70,9 @@ if exist "!tempConfigFile!" (
 
 :: Fallbacks indien variabelen niet gelezen konden worden
 if not defined PS_HiddenFolderName set "PS_HiddenFolderName=LeenlaptopSchoonmaak"
-if not defined PS_ScriptVersion set "PS_ScriptVersion=1.6.2"
+if not defined PS_ScriptVersion set "PS_ScriptVersion=1.6.3"
 if not defined PS_TaskName set "PS_TaskName=LeenlaptopSchoonmaak"
+if not defined PS_InstalledScriptName set "PS_InstalledScriptName=LeenlaptopSchoonmaak.ps1"
 if not defined PS_EnableStartupTask set "PS_EnableStartupTask=true"
 if not defined PS_EnableShortcut set "PS_EnableShortcut=true"
 if not defined PS_EnableBrowserCleanup set "PS_EnableBrowserCleanup=true"
@@ -86,7 +90,7 @@ if not defined PS_EnableMusicCleanup set "PS_EnableMusicCleanup=false"
 if not defined PS_MusicMaxAgeDays set "PS_MusicMaxAgeDays=30"
 if not defined PS_EnableFirewallReset set "PS_EnableFirewallReset=true"
 if not defined PS_EnableBackupCleanup set "PS_EnableBackupCleanup=true"
-if not defined PS_MaxBackupCount set "PS_MaxBackupCount=10"
+if not defined PS_MaxBackupCount set "PS_MaxBackupCount=5"
 if not defined PS_MaxExecutionMinutes set "PS_MaxExecutionMinutes=5"
 if not defined PS_LogRetentionDays set "PS_LogRetentionDays=30"
 

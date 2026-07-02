@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Schoonmaak- en opstartscript voor leenlaptops.
+    Opschoonscript voor leenlaptops.
 
 .DESCRIPTION
     Kopieert zichzelf naar een verborgen map, sluit browsers, verwijdert browserdata,
@@ -22,13 +22,13 @@
 
 .NOTES
     Auteur: Ruben Draaisma
-    VERSIE: 1.6.2
-    Laatste wijziging: 2026-01-14 (yyyy-mm-dd)
+    VERSIE: 1.6.3
+    Laatste wijziging: 2026-07-02 (yyyy-mm-dd)
     AVG-conform: Minimale logging van persoonsgegevens, 30 dagen retentie
-    Volledig configureerbaar: Alle opschoonacties kunnen in/uitgeschakeld worden
+    Configureerbaar: opschoonacties kunnen per onderdeel aan of uit worden gezet
        
 .EXAMPLE
-    .\opstart-script.ps1
+    .\LeenlaptopSchoonmaak.ps1
     Voert volledige opschoning uit met huidige instellingen
 #>
 
@@ -65,7 +65,8 @@ if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -
 [string]$TaskName           = 'LeenlaptopSchoonmaak'  # Naam van scheduled task
 [string]$LogFileName        = 'log.txt'               # Naam van logbestand
 [string]$EventSource        = 'LeenlaptopSchoonmaak'  # Event Log bron
-[string]$ScriptVersion      = '1.6.2'                 # Huidige scriptversie
+[string]$ScriptVersion      = '1.6.3'                 # Huidige scriptversie
+[string]$InstalledScriptName = 'LeenlaptopSchoonmaak.ps1' # Naam van het geinstalleerde script
 
 # ============================================================================
 # VOORZIENINGEN (wat wordt geïnstalleerd)
@@ -112,7 +113,7 @@ if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -
 [int]  $LogRetentionDays    = 30         # AVG: Logretentie in dagen
 [int]  $MaxRetries          = 3          # Maximaal aantal herhaalpogingen bij fouten
 [int]  $MaxExecutionMinutes = 5          # Maximale uitvoeringstijd
-[bool] $ForceUpdate         = $true     # Forceer update van bestaand script
+[bool] $ForceUpdate         = $false    # Forceer update van bestaand script
 #endregion
 
 if ($PrintConfig) {
@@ -123,6 +124,7 @@ if ($PrintConfig) {
         LogFileName            = $LogFileName
         EventSource            = $EventSource
         ScriptVersion          = $ScriptVersion
+        InstalledScriptName    = $InstalledScriptName
         AllowedWiFi            = ($AllowedWiFi -join ',')
         BrowserList            = ($BrowserList -join ',')
         EnableShortcut         = $EnableShortcut
@@ -172,6 +174,42 @@ function Test-IsAdmin {
     }
 }
 
+function Remove-LegacyInstallationArtifacts {
+    <#
+    .SYNOPSIS
+    Ruimt oude namen op na migratie naar de huidige naming scheme.
+    #>
+    try {
+        if ($IsAdmin) {
+            $legacyTaskNames = @('Opstart-Script')
+            foreach ($legacyTaskName in $legacyTaskNames) {
+                $legacyTask = Get-ScheduledTask -TaskName $legacyTaskName -ErrorAction SilentlyContinue
+                if ($legacyTask) {
+                    Unregister-ScheduledTask -TaskName $legacyTaskName -Confirm:$false -ErrorAction SilentlyContinue
+                    Write-Log -Message "Oude geplande taak verwijderd: $legacyTaskName"
+                }
+            }
+        }
+
+        $legacyScriptNames = @('opstart-script.ps1')
+        foreach ($legacyScriptName in $legacyScriptNames) {
+            $legacyScriptPath = Join-Path $HiddenFolderPath $legacyScriptName
+            if (Test-Path $legacyScriptPath) {
+                try {
+                    $backupName = "backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')_$legacyScriptName"
+                    Copy-Item -Path $legacyScriptPath -Destination (Join-Path $HiddenFolderPath $backupName) -Force -ErrorAction SilentlyContinue
+                    Remove-Item -Path $legacyScriptPath -Force -ErrorAction Stop
+                    Write-Log -Message "Oude scriptnaam verwijderd na migratie: $legacyScriptName"
+                } catch {
+                    Write-Log -Message "Oude scriptnaam kon niet worden verwijderd: $legacyScriptName" -Level 'WARN'
+                }
+            }
+        }
+    } catch {
+        Write-Log -Message "Migratie-opruiming kon niet volledig worden uitgevoerd: $($_.Exception.Message)" -Level 'WARN'
+    }
+}
+
 function Initialize-Environment {
     try {
         # Migratie van 1.5.0 naar 1.6.0: verplaats van LOCALAPPDATA naar ProgramData
@@ -184,13 +222,6 @@ function Initialize-Environment {
                 # Kopieer oude bestanden naar nieuwe locatie
                 New-Item -Path $HiddenFolderPath -ItemType Directory -Force | Out-Null
                 Copy-Item -Path "$oldPath\*" -Destination $HiddenFolderPath -Recurse -Force -ErrorAction SilentlyContinue
-                
-                # Verwijder oude scheduled task (oude naam)
-                $oldTaskName = 'Opstart-Script'
-                if (Get-ScheduledTask -TaskName $oldTaskName -ErrorAction SilentlyContinue) {
-                    Unregister-ScheduledTask -TaskName $oldTaskName -Confirm:$false -ErrorAction SilentlyContinue
-                    Write-Host "[MIGRATIE] Oude scheduled task '$oldTaskName' verwijderd" -ForegroundColor Yellow
-                }
                 
                 # Verwijder oude map (optioneel, alleen als leeg)
                 try {
@@ -301,6 +332,10 @@ function Test-Configuration {
     if ([string]::IsNullOrWhiteSpace($TaskName)) { $errors += 'TaskName mag niet leeg zijn' }
     if ([string]::IsNullOrWhiteSpace($LogFileName)) { $errors += 'LogFileName mag niet leeg zijn' }
     if ([string]::IsNullOrWhiteSpace($EventSource)) { $errors += 'EventSource mag niet leeg zijn' }
+    if ([string]::IsNullOrWhiteSpace($InstalledScriptName)) { $errors += 'InstalledScriptName mag niet leeg zijn' }
+    if ([IO.Path]::GetFileName($InstalledScriptName) -ne $InstalledScriptName) {
+        $errors += 'InstalledScriptName mag geen pad bevatten, alleen een bestandsnaam'
+    }
     
     # Retourneer validatieresultaat
     if ($errors.Count -gt 0) {
@@ -371,7 +406,7 @@ function Copy-ScriptToHidden {
             throw "Geen geldig scriptpad gevonden."
         }
 
-        $dest = Join-Path $HiddenFolderPath (Split-Path $source -Leaf)
+        $dest = Join-Path $HiddenFolderPath $InstalledScriptName
         
         # Controleer of update nodig is
         $needsUpdate = $ForceUpdate -or (-not (Test-Path $dest))
@@ -389,7 +424,7 @@ function Copy-ScriptToHidden {
         if ($needsUpdate) {
             # Maak backup van bestaand script
             if (Test-Path $dest) {
-                $backupName = "backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')_$(Split-Path $source -Leaf)"
+                $backupName = "backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')_$InstalledScriptName"
                 $backupPath = Join-Path $HiddenFolderPath $backupName
                 try {
                     Copy-Item -Path $dest -Destination $backupPath -Force -ErrorAction Stop
@@ -719,33 +754,91 @@ function Clear-TempFiles {
     }
 }
 
+function Remove-OldFolderItems {
+    <#
+    .SYNOPSIS
+    Verwijdert oude bestanden uit een map en ruimt daarna alleen lege oude submappen op.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$RootPath,
+        [Parameter(Mandatory)][int]$MaxAgeDays,
+        [Parameter(Mandatory)][string]$DisplayName
+    )
+
+    $cutoffDate = (Get-Date).AddDays(-$MaxAgeDays)
+    $removedFiles = 0
+    $removedDirs = 0
+    $failedCount = 0
+
+    $oldFiles = @(Get-ChildItem -LiteralPath $RootPath -File -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -lt $cutoffDate })
+
+    if ($oldFiles.Count -eq 0) {
+        Write-Log -Message "$DisplayName-map: geen bestanden ouder dan $MaxAgeDays dagen"
+    } else {
+        foreach ($file in $oldFiles) {
+            try {
+                Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop
+                $removedFiles++
+            } catch {
+                $failedCount++
+            }
+        }
+    }
+
+    # Ruim alleen lege submappen op. Sorteer diepste mappen eerst zodat ouders leeg kunnen worden.
+    $oldDirectories = @(Get-ChildItem -LiteralPath $RootPath -Directory -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -lt $cutoffDate } |
+        Sort-Object -Property FullName -Descending)
+
+    foreach ($directory in $oldDirectories) {
+        try {
+            $children = @(Get-ChildItem -LiteralPath $directory.FullName -Force -ErrorAction SilentlyContinue)
+            if ($children.Count -eq 0) {
+                Remove-Item -LiteralPath $directory.FullName -Force -ErrorAction Stop
+                $removedDirs++
+            }
+        } catch {
+            $failedCount++
+        }
+    }
+
+    $removedTotal = $removedFiles + $removedDirs
+    if ($removedTotal -gt 0) {
+        $message = "$DisplayName-map opgeschoond: $removedTotal items verwijderd ($removedFiles bestanden, $removedDirs lege mappen; ouder dan $MaxAgeDays dagen)"
+        if ($failedCount -gt 0) { $message += " - $failedCount items konden niet worden verwijderd" }
+        Write-Log -Message $message
+        return $removedTotal
+    }
+
+    if ($failedCount -gt 0) {
+        Write-Log -Message "$DisplayName-map: $failedCount oude items konden niet worden verwijderd" -Level 'WARN'
+        return -1
+    }
+
+    return 0
+}
+
 function Clear-DownloadsFolder {
     try {
         # Gebruikt de Downloads-map van de INGELOGDE gebruiker
         # Bij scheduled task = de gebruiker die is ingelogd (via -UserId in task principal)
-        # Gebruik Shell.Application COM object voor betrouwbare Downloads pad
-        $shell = New-Object -ComObject Shell.Application -ErrorAction Stop
-        $downloadsPath = $shell.NameSpace('shell:Downloads').Self.Path
+        # Gebruik Shell.Application COM object voor betrouwbare Downloads pad; val terug op standaard profielpad.
+        $downloadsPath = $null
+        try {
+            $shell = New-Object -ComObject Shell.Application -ErrorAction Stop
+            $downloadsPath = $shell.NameSpace('shell:Downloads').Self.Path
+        } catch {
+            $downloadsPath = Join-Path $env:USERPROFILE 'Downloads'
+            Write-Log -Message 'Downloads-pad bepaald via USERPROFILE fallback' -SkipEventLog
+        }
         
         if (-not $downloadsPath -or -not (Test-Path $downloadsPath)) {
             Write-Log -Message 'Downloads-map niet gevonden'
             return 0
         }
         
-        # Filter op leeftijd (alleen bestanden ouder dan X dagen)
-        $cutoffDate = (Get-Date).AddDays(-$DownloadsMaxAgeDays)
-        $oldItems = @(Get-ChildItem $downloadsPath -Recurse -ErrorAction SilentlyContinue | 
-                      Where-Object { $_.LastWriteTime -lt $cutoffDate })
-        
-        $itemCount = $oldItems.Count
-        if ($itemCount -eq 0) {
-            Write-Log -Message "Downloads-map: geen bestanden ouder dan $DownloadsMaxAgeDays dagen"
-            return 0
-        }
-        
-        $oldItems | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Log -Message "Downloads-map opgeschoond: $itemCount items verwijderd (ouder dan $DownloadsMaxAgeDays dagen)"
-        return $itemCount
+        return Remove-OldFolderItems -RootPath $downloadsPath -MaxAgeDays $DownloadsMaxAgeDays -DisplayName 'Downloads'
     } catch {
         Write-Log -Message "Fout bij opschonen Downloads: $($_.Exception.Message)" -Level 'WARN'
         return -1
@@ -798,12 +891,14 @@ function Clear-UserFolder {
             return 0
         }
         
-        # Filter op leeftijd (alleen bestanden ouder dan X dagen)
-        $cutoffDate = (Get-Date).AddDays(-$MaxAgeDays)
-        $oldItems = @(Get-ChildItem $folderPath -Recurse -ErrorAction SilentlyContinue | 
-                      Where-Object { $_.LastWriteTime -lt $cutoffDate })
-        
-        $itemCount = $oldItems.Count
+        $oldFileCount = @(Get-ChildItem -LiteralPath $folderPath -File -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$MaxAgeDays) }).Count
+        $oldEmptyDirCount = @(Get-ChildItem -LiteralPath $folderPath -Directory -Recurse -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.LastWriteTime -lt (Get-Date).AddDays(-$MaxAgeDays) -and
+                @(Get-ChildItem -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue).Count -eq 0
+            }).Count
+        $itemCount = $oldFileCount + $oldEmptyDirCount
         if ($itemCount -eq 0) {
             Write-Log -Message "$displayName-map: geen bestanden ouder dan $MaxAgeDays dagen"
             return 0
@@ -813,10 +908,8 @@ function Clear-UserFolder {
         if ($ShowWarning) {
             Write-Log -Message "WAARSCHUWING: $displayName-map wordt opgeschoond: $itemCount items (ouder dan $MaxAgeDays dagen)" -Level 'WARN'
         }
-        
-        $oldItems | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Log -Message "$displayName-map opgeschoond: $itemCount items verwijderd (ouder dan $MaxAgeDays dagen)"
-        return $itemCount
+
+        return Remove-OldFolderItems -RootPath $folderPath -MaxAgeDays $MaxAgeDays -DisplayName $displayName
     } catch {
         Write-Log -Message "Fout bij opschonen ${displayName}: $($_.Exception.Message)" -Level 'WARN'
         return -1
@@ -1101,7 +1194,7 @@ function Set-DesktopShortcut {
     $desktop = Get-ActualUserDesktop
     $linkPath = Join-Path $desktop $ShortcutName
     
-    # Migratie v1.5.0 → v1.6.0: verwijder oude snelkoppelingen
+    # Migratie v1.5.0 -> v1.6.0: verwijder oude snelkoppelingen
     $oldShortcutNames = @('Terug naar start.lnk', 'Laptop Opschonen.lnk')
     foreach ($oldName in $oldShortcutNames) {
         $oldPath = Join-Path $desktop $oldName
@@ -1318,6 +1411,7 @@ Voor volledige functionaliteit: Start als administrator
         if ([string]::IsNullOrEmpty($destPath) -or -not (Test-Path $destPath)) {
             throw "Script kon niet naar verborgen map worden gekopieerd. Pad: $destPath"
         }
+        Remove-LegacyInstallationArtifacts
         
         # Stap 2: Browser opschoning
         Write-Progress -Activity "Leenlaptop opschoning" -Status "Browsers opschonen..." -PercentComplete (++$currentStep / $totalSteps * 100)
@@ -1391,7 +1485,7 @@ Voor volledige functionaliteit: Start als administrator
             if ($dlCount -gt 0) {
                 $completedSteps += "Downloads-map geleegd ($dlCount items verwijderd)"
             } elseif ($dlCount -eq 0) {
-                $skippedSteps += 'Downloads-map (was al leeg)'
+                $skippedSteps += "Downloads-map (geen bestanden ouder dan $DownloadsMaxAgeDays dagen)"
             } else {
                 $skippedSteps += 'Downloads-map (fout bij opschonen)'
             }
@@ -1407,7 +1501,7 @@ Voor volledige functionaliteit: Start als administrator
             if ($docCount -gt 0) {
                 $completedSteps += "Documenten-map geleegd ($docCount items verwijderd)"
             } elseif ($docCount -eq 0) {
-                $skippedSteps += 'Documenten-map (was al leeg)'
+                $skippedSteps += "Documenten-map (geen bestanden ouder dan $DocumentsMaxAgeDays dagen)"
             } else {
                 $skippedSteps += 'Documenten-map (fout bij opschonen)'
             }
@@ -1423,7 +1517,7 @@ Voor volledige functionaliteit: Start als administrator
             if ($picCount -gt 0) {
                 $completedSteps += "Afbeeldingen-map geleegd ($picCount items verwijderd)"
             } elseif ($picCount -eq 0) {
-                $skippedSteps += 'Afbeeldingen-map (was al leeg)'
+                $skippedSteps += "Afbeeldingen-map (geen bestanden ouder dan $PicturesMaxAgeDays dagen)"
             } else {
                 $skippedSteps += 'Afbeeldingen-map (fout bij opschonen)'
             }
@@ -1439,7 +1533,7 @@ Voor volledige functionaliteit: Start als administrator
             if ($vidCount -gt 0) {
                 $completedSteps += "Video's-map geleegd ($vidCount items verwijderd)"
             } elseif ($vidCount -eq 0) {
-                $skippedSteps += "Video's-map (was al leeg)"
+                $skippedSteps += "Video's-map (geen bestanden ouder dan $VideosMaxAgeDays dagen)"
             } else {
                 $skippedSteps += "Video's-map (fout bij opschonen)"
             }
@@ -1455,7 +1549,7 @@ Voor volledige functionaliteit: Start als administrator
             if ($musCount -gt 0) {
                 $completedSteps += "Muziek-map geleegd ($musCount items verwijderd)"
             } elseif ($musCount -eq 0) {
-                $skippedSteps += 'Muziek-map (was al leeg)'
+                $skippedSteps += "Muziek-map (geen bestanden ouder dan $MusicMaxAgeDays dagen)"
             } else {
                 $skippedSteps += 'Muziek-map (fout bij opschonen)'
             }
