@@ -38,6 +38,9 @@ jobs:
       - name: Isolated tests (Windows PowerShell 5.1)
         shell: powershell
         run: .\tests\Invoke-Tests.ps1 -PesterModulePath "$env:RUNNER_TEMP\leenlaptop-modules\Pester\4.10.1\Pester.psd1"
+      - name: Install and update on disposable Windows runner
+        shell: powershell
+        run: .\tests\Invoke-WindowsIntegration.ps1
       - name: Build release archive
         shell: powershell
         run: .\tools\New-ReleaseArchive.ps1

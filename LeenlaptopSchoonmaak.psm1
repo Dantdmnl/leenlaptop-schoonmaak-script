@@ -184,6 +184,7 @@ function Get-SafeTree {
     while ($pending.Count) {
         Assert-TimeRemaining
         $folder = $pending.Pop()
+        Assert-SafeRoot $folder
         foreach ($item in Get-ChildItem -LiteralPath $folder -Force -ErrorAction Stop) {
             if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { $item; continue }
             $item
@@ -254,7 +255,7 @@ function Clear-UtilityBrowser {
         'firefox' { Join-Path $env:APPDATA 'Mozilla\Firefox' }
     }
     Assert-UserDataPath $root
-    # Beperk procesbeheer tot het doelaccount; andere sessies blijven ongemoeid.
+    # Beperk procesbeheer tot het doelaccount; andere accounts blijven ongemoeid.
     foreach ($process in Get-CimInstance Win32_Process -Filter "Name = '$Browser.exe'" -ErrorAction Stop) {
         Assert-TimeRemaining
         $owner = Invoke-CimMethod -InputObject $process -MethodName GetOwnerSid -ErrorAction Stop
@@ -447,6 +448,7 @@ function Set-UtilityTask {
     $arguments = @{ TaskName = $script:TaskName; Action = $action; Principal = $principal; Settings = $settings; Force = $true; ErrorAction = 'Stop' }
     if ($Config.RunAtLogon) { $arguments.Trigger = New-ScheduledTaskTrigger -AtLogOn -User $Config.TargetUserSid }
     Register-ScheduledTask @arguments | Out-Null
+    Set-UtilityTaskPermissions $Config.TargetUserSid
     $task = Get-ScheduledTask -TaskName $script:TaskName -ErrorAction Stop
     $principalSid = $task.Principal.UserId
     if ($principalSid -notmatch '^S-1-') {
@@ -454,6 +456,39 @@ function Set-UtilityTask {
     }
     if ($task.Actions.Arguments -notcontains $action.Arguments -or $principalSid -ne $Config.TargetUserSid) {
         throw 'Verificatie van de nieuwe geplande taak mislukt.'
+    }
+}
+
+function Set-UtilityTaskPermissions {
+    param([string]$TargetSid, [string]$SecurityDescriptor)
+    $service = New-Object -ComObject 'Schedule.Service'
+    $folder = $null; $task = $null
+    try {
+        $service.Connect()
+        $folder = $service.GetFolder('\')
+        $task = $folder.GetTask($script:TaskName)
+        # Het doelaccount mag de taak lezen en starten, maar niet wijzigen.
+        if (-not $SecurityDescriptor) { $SecurityDescriptor = "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGX;;;$TargetSid)" }
+        $task.SetSecurityDescriptor($SecurityDescriptor, 0x10)
+    } finally {
+        foreach ($instance in @($task, $folder, $service)) {
+            if ($instance) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($instance) }
+        }
+    }
+}
+
+function Get-UtilityTaskSecurityDescriptor {
+    $service = New-Object -ComObject 'Schedule.Service'
+    $folder = $null; $task = $null
+    try {
+        $service.Connect()
+        $folder = $service.GetFolder('\')
+        $task = $folder.GetTask($script:TaskName)
+        return $task.GetSecurityDescriptor(4)
+    } finally {
+        foreach ($instance in @($task, $folder, $service)) {
+            if ($instance) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($instance) }
+        }
     }
 }
 
@@ -533,7 +568,7 @@ function Install-UtilityPackage {
     $backup = Join-Path $InstallPath ('backups\' + [DateTime]::UtcNow.ToString('yyyyMMdd_HHmmss_fffffff'))
     $stage = Join-Path $InstallPath ('stage_' + [guid]::NewGuid().ToString('N'))
     $names = @($script:PackageFiles) + @('config.json', 'version.txt', 'manifest.json', 'opstart-script.ps1')
-    $previous = @(); $fileAcls = @{}; $taskXml = $null; $deployStarted = $false
+    $previous = @(); $fileAcls = @{}; $taskXml = $null; $taskSecurity = $null; $deployStarted = $false
     $shortcutPath = ''; $shortcutExisted = $false
     try {
         $shortcutPath = Get-UtilityShortcutPath
@@ -549,6 +584,10 @@ function Install-UtilityPackage {
         foreach ($name in $names) {
             $path = Join-Path $InstallPath $name
             if (Test-Path -LiteralPath $path) {
+                $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
+                if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                    throw 'Installatiebestand is een map of link; update geweigerd.'
+                }
                 Copy-VerifiedFile $path (Join-Path $backup $name)
                 $fileAcls[$name] = Get-Acl -LiteralPath $path -ErrorAction Stop
                 $previous += $name
@@ -557,6 +596,8 @@ function Install-UtilityPackage {
         if (Get-ScheduledTask -TaskName $script:TaskName -ErrorAction SilentlyContinue) {
             $taskXml = Export-ScheduledTask -TaskName $script:TaskName -ErrorAction Stop
             $taskXml | Set-Content -LiteralPath (Join-Path $backup 'task.xml') -Encoding UTF8 -ErrorAction Stop
+            $taskSecurity = Get-UtilityTaskSecurityDescriptor
+            $taskSecurity | Set-Content -LiteralPath (Join-Path $backup 'task-security.sddl') -Encoding UTF8 -ErrorAction Stop
         }
         foreach ($name in $script:PackageFiles) { Copy-VerifiedFile (Join-Path $SourcePath $name) (Join-Path $stage $name) }
         $Config | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $stage 'config.json') -Encoding UTF8 -ErrorAction Stop
@@ -604,7 +645,10 @@ function Install-UtilityPackage {
                 }
                 elseif (Test-Path -LiteralPath (Join-Path $InstallPath $name)) { Remove-Item -LiteralPath (Join-Path $InstallPath $name) -Force -ErrorAction Stop }
             }
-            if ($taskXml) { Register-ScheduledTask -TaskName $script:TaskName -Xml $taskXml -Force -ErrorAction Stop | Out-Null }
+            if ($taskXml) {
+                Register-ScheduledTask -TaskName $script:TaskName -Xml $taskXml -Force -ErrorAction Stop | Out-Null
+                Set-UtilityTaskPermissions -SecurityDescriptor $taskSecurity
+            }
             elseif (Get-ScheduledTask -TaskName $script:TaskName -ErrorAction SilentlyContinue) { Unregister-ScheduledTask -TaskName $script:TaskName -Confirm:$false -ErrorAction Stop }
             if ($shortcutExisted) { Copy-VerifiedFile (Join-Path $backup 'shortcut.lnk') $shortcutPath }
             elseif (Test-Path -LiteralPath $shortcutPath) { Remove-Item -LiteralPath $shortcutPath -Force -ErrorAction Stop }
@@ -748,7 +792,8 @@ function Invoke-LeenlaptopUtility {
             $lock = Enter-UtilityLock $InstallPath
         } else { $results = @(New-StepResult 'Installatie' 'Planned') }
     } else {
-        if (-not $WhatIfPreference -and (-not $config.TargetUserSid -or $config.TargetUserSid -ne (Get-CurrentUserSid))) {
+        if (($config.TargetUserSid -and $config.TargetUserSid -ne (Get-CurrentUserSid)) -or
+            (-not $config.TargetUserSid -and -not $WhatIfPreference)) {
             throw 'Opschoning geweigerd: voer uit als het geconfigureerde doelaccount. Gebruik -Check voor controle.'
         }
         $plan = @(Get-CleanupPlan $config)

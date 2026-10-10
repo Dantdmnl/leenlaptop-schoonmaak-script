@@ -169,6 +169,7 @@ throw 'Mag nooit worden uitgevoerd'
                 @{ Config = $config; Source = 'test'; Legacy = $false }
             }
             { Invoke-LeenlaptopUtility -Action Cleanup -InstallPath $install } | Should Throw
+            { Invoke-LeenlaptopUtility -Action Cleanup -InstallPath $install -WhatIf } | Should Throw
             Assert-MockCalled Invoke-CleanupStep -Times 0 -Exactly
         }
         It 'onderscheidt fouten en gedeeltelijk succes in exitcodes' {
@@ -231,6 +232,8 @@ throw 'Mag nooit worden uitgevoerd'
             Mock Register-ScheduledTask {}
             Mock Unregister-ScheduledTask {}
             Mock Set-UtilityTask {}
+            Mock Get-UtilityTaskSecurityDescriptor { 'D:P(A;;GA;;;SY)(A;;GA;;;BA)' }
+            Mock Set-UtilityTaskPermissions {}
             Mock Set-UtilityShortcut {}
         }
         It 'herstelt bestanden en behoudt het oude script wanneer taakregistratie faalt' {
@@ -250,6 +253,7 @@ throw 'Mag nooit worden uitgevoerd'
             Mock Set-UtilityTask { throw 'task failed' }
             { Install-UtilityPackage $source $destination $config } | Should Throw
             Assert-MockCalled Register-ScheduledTask -Times 1 -Exactly -ParameterFilter { $Xml -eq '<Task>old</Task>' }
+            Assert-MockCalled Set-UtilityTaskPermissions -Times 1 -Exactly -Scope It -ParameterFilter { $SecurityDescriptor -eq 'D:P(A;;GA;;;SY)(A;;GA;;;BA)' }
         }
         It 'verwijdert oude namen pas nadat de nieuwe voorzieningen geslaagd zijn' {
             $results = @(Install-UtilityPackage $source $destination $config)
@@ -313,6 +317,55 @@ throw 'Mag nooit worden uitgevoerd'
             $result.Removed | Should Be 2
             Assert-MockCalled Remove-WiFiProfileName -Times 1 -Exactly -Scope It -ParameterFilter { $Name -eq '*' }
             Assert-MockCalled Remove-WiFiProfileName -Times 0 -Exactly -Scope It -ParameterFilter { $Name -ceq 'Kantoor' }
+        }
+    }
+
+    Describe 'Browseropslag met uitsluitend testprofielen' {
+        BeforeEach {
+            $script:Deadline = $null
+            $savedEnvironment = @{}
+            foreach ($name in @('USERPROFILE', 'LOCALAPPDATA', 'APPDATA')) {
+                $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+            }
+            $fakeProfile = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+            $env:USERPROFILE = $fakeProfile
+            $env:LOCALAPPDATA = Join-Path $fakeProfile 'AppData\Local'
+            $env:APPDATA = Join-Path $fakeProfile 'AppData\Roaming'
+            Mock Get-CurrentUserSid { 'S-1-5-21-1-2-3-1001' }
+            Mock Get-CimInstance { @() }
+            Mock Stop-Process { throw 'Geen echte processen stoppen' }
+        }
+        AfterEach {
+            foreach ($name in $savedEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name], 'Process') }
+        }
+        It 'wist alle Chrome-testprofielen, ook profielen met een aangepaste naam' {
+            $root = Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data'
+            foreach ($name in @('Default', 'Profile 1', 'Custom')) {
+                $folder = Join-Path $root $name
+                New-Item $folder -ItemType Directory -Force | Out-Null
+                'fake cookies' | Set-Content (Join-Path $folder 'Cookies')
+            }
+            $result = Clear-UtilityBrowser chrome 3
+            $result.Status | Should Be 'Success'
+            @(Get-ChildItem $root -Force).Count | Should Be 0
+            Assert-MockCalled Stop-Process -Times 0 -Exactly -Scope It
+        }
+        It 'wist Firefox-testprofielen en hun profielregistratie samen' {
+            $root = Join-Path $env:APPDATA 'Mozilla\Firefox'
+            New-Item (Join-Path $root 'Profiles\test.default') -ItemType Directory -Force | Out-Null
+            'fake profile registration' | Set-Content (Join-Path $root 'profiles.ini')
+            'fake preferences' | Set-Content (Join-Path $root 'Profiles\test.default\prefs.js')
+            $result = Clear-UtilityBrowser firefox 3
+            $result.Status | Should Be 'Success'
+            @(Get-ChildItem $root -Force).Count | Should Be 0
+        }
+        It 'wist de lokale opslag van een Edge-testprofiel' {
+            $root = Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data'
+            New-Item (Join-Path $root 'Default') -ItemType Directory -Force | Out-Null
+            'fake history' | Set-Content (Join-Path $root 'Default\History')
+            $result = Clear-UtilityBrowser msedge 3
+            $result.Status | Should Be 'Success'
+            @(Get-ChildItem $root -Force).Count | Should Be 0
         }
     }
 }
