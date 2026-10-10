@@ -369,4 +369,24 @@ throw 'Mag nooit worden uitgevoerd'
             @(Get-ChildItem $root -Force).Count | Should Be 0
         }
     }
+
+    Describe 'WLAN-interop zonder Windows WLAN-aanroepen' {
+        BeforeEach {
+            if (-not ('Leenlaptop.WlanProfiles' -as [type])) { Add-Type -Path (Join-Path (Split-Path $PSScriptRoot) 'WlanProfiles.cs') }
+        }
+        It 'gebruikt de juiste native structuurafmetingen' {
+            $type = 'Leenlaptop.WlanProfiles' -as [type]
+            $interfaceType = $type.GetNestedType('InterfaceInfo', [Reflection.BindingFlags]::NonPublic)
+            $profileType = $type.GetNestedType('ProfileInfo', [Reflection.BindingFlags]::NonPublic)
+            [Runtime.InteropServices.Marshal]::SizeOf([Activator]::CreateInstance($interfaceType)) | Should Be 532
+            [Runtime.InteropServices.Marshal]::SizeOf([Activator]::CreateInstance($profileType)) | Should Be 516
+        }
+        It 'marshalt profielnamen als Unicode voor letterlijke verwijdering' {
+            $type = 'Leenlaptop.WlanProfiles' -as [type]
+            $method = $type.GetMethod('WlanDeleteProfile', [Reflection.BindingFlags]'NonPublic,Static')
+            $attribute = $method.GetCustomAttributes([Runtime.InteropServices.DllImportAttribute], $false)[0]
+            $attribute.CharSet | Should Be ([Runtime.InteropServices.CharSet]::Unicode)
+            $attribute.Value | Should Be 'wlanapi.dll'
+        }
+    }
 }

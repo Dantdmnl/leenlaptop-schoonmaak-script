@@ -1,6 +1,6 @@
 # Privacy en gegevensbeheer
 
-Technische beschrijving voor Leenlaptop Schoonmaak 1.7.0-rc.1, 10 oktober 2026. Organisaties bepalen zelf welke gegevens mogen worden verwijderd, welke bewaartermijnen passen en wie de utility mag gebruiken.
+Technische beschrijving voor Leenlaptop Schoonmaak 1.7.0, 10 oktober 2026. Organisaties bepalen zelf welke gegevens mogen worden verwijderd, welke bewaartermijnen passen en wie de utility mag gebruiken.
 
 ## Opschoonscope
 

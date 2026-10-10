@@ -10,6 +10,8 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or -not $env:RUNNER_TEMP) {
 if (Get-ScheduledTask -TaskName 'LeenlaptopSchoonmaak' -ErrorAction SilentlyContinue) {
     throw 'Onverwachte bestaande utility-taak; integratietest gestopt.'
 }
+$shortcutPath = Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'Leenlaptop Opschonen.lnk'
+if (Test-Path -LiteralPath $shortcutPath) { throw 'Onverwachte bestaande utility-snelkoppeling; integratietest gestopt.' }
 
 $source = Split-Path $PSScriptRoot
 $caseRoot = Join-Path $env:RUNNER_TEMP ('leenlaptop-integration-' + [guid]::NewGuid().ToString('N'))
@@ -22,6 +24,7 @@ foreach ($key in @($config.Keys)) {
     if ($key -like 'Enable*') { $config[$key] = $false }
 }
 $config.EnableStartupTask = $true
+$config.EnableShortcut = $true
 $config.RunAtLogon = $false
 $config | ConvertTo-Json -Depth 5 | Set-Content $configPath -Encoding UTF8
 $account = [Security.Principal.WindowsIdentity]::GetCurrent().Name
@@ -34,6 +37,16 @@ try {
     if (@($task.Triggers | Where-Object { $_ }).Count -ne 0) { throw 'Er is onbedoeld een automatische trigger ingesteld.' }
     if ($task.Principal.LogonType -ne 'Interactive') { throw 'Taak gebruikt geen interactieve gebruikerscontext.' }
     if ($task.Actions.Arguments -notmatch '\s-Cleanup\s') { throw 'Taak verwijst niet naar de cleanup-modus.' }
+    $shell = New-Object -ComObject WScript.Shell
+    $link = $null
+    try {
+        $link = $shell.CreateShortcut($shortcutPath)
+        if ($link.Arguments -ne '/Run /TN "LeenlaptopSchoonmaak"') { throw 'Snelkoppeling start niet de geconfigureerde taak.' }
+    } finally {
+        foreach ($instance in @($link, $shell)) {
+            if ($instance) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($instance) }
+        }
+    }
     $service = New-Object -ComObject 'Schedule.Service'
     $folder = $null; $registeredTask = $null
     try {
@@ -70,6 +83,12 @@ try {
     if ($result.ExitCode -ne 0 -or $result.Results[0].Status -ne 'Skipped') { throw 'Lege cleanup is niet correct afgehandeld.' }
     $result = Invoke-LeenlaptopUtility -Action Check -SourcePath $source -InstallPath $installPath
     if ($result.ExitCode -ne 0) { throw 'Geinstalleerd pakket doorstaat de controle niet.' }
+    $entry = Join-Path $installPath 'LeenlaptopSchoonmaak.ps1'
+    $powershellPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+    $json = & $powershellPath -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $entry -PrintConfig -InstallPath $installPath
+    if ($LASTEXITCODE -ne 0) { throw 'Geinstalleerde CLI kan geen configuratie exporteren.' }
+    $exported = ($json -join [Environment]::NewLine) | ConvertFrom-Json
+    if ($exported.TargetUserSid -ne $sid -or $exported.EnableBrowserCleanup) { throw 'CLI leest niet de geinstalleerde configuratie.' }
 
     $saved = Get-Content (Join-Path $installPath 'config.json') -Raw | ConvertFrom-Json
     $saved.DownloadsMaxAgeDays = 19
@@ -91,10 +110,11 @@ try {
     if ($result.ExitCode -ne 0 -or (Get-ScheduledTask -TaskName 'LeenlaptopSchoonmaak' -ErrorAction SilentlyContinue)) {
         throw 'Uitgeschakelde taak is niet verwijderd.'
     }
-    Write-Output 'Windows integration: install, ACLs, manifest, reports, update, triggers and task removal OK.'
+    Write-Output 'Windows integration: install, ACLs, task permissions, shortcut, manifest, CLI, reports, update, triggers and task removal OK.'
 } finally {
     if (Get-ScheduledTask -TaskName 'LeenlaptopSchoonmaak' -ErrorAction SilentlyContinue) {
         Unregister-ScheduledTask -TaskName 'LeenlaptopSchoonmaak' -Confirm:$false
     }
+    if (Test-Path -LiteralPath $shortcutPath) { Remove-Item -LiteralPath $shortcutPath -Force }
     # Testbestanden blijven in RUNNER_TEMP; GitHub verwijdert de volledige wegwerpmachine.
 }

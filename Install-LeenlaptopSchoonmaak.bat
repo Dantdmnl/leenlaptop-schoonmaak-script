@@ -1,7 +1,7 @@
 @echo off
 setlocal
 title Leenlaptop Schoonmaak - installatie
-echo Leenlaptop Schoonmaak 1.7.0-rc.1
+echo Leenlaptop Schoonmaak 1.7.0
 echo Installatie verwijdert geen gebruikersgegevens.
 echo.
 if not exist "%~dp0LeenlaptopSchoonmaak.psm1" (

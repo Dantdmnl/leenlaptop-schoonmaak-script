@@ -2,6 +2,22 @@
 
 Alle relevante wijzigingen aan het leenlaptop-schoonmaakscript worden in dit bestand vastgelegd.
 
+## [1.7.0] - 2026-10-10
+
+Stabiele release van de utility met afzonderlijke installatie-, controle- en opschoonacties.
+
+### Gewijzigd sinds rc.1
+
+- Doelaccount krijgt expliciete lees- en startrechten op de geplande taak; oude taakrechten worden bij herstel teruggezet.
+- Padcontrole omvat bestaande bovenliggende mappen van nog niet aangemaakte locaties. Installatie weigert programmabestanden die mappen of links zijn.
+- Voorvertoning vanuit een ander account dan de geconfigureerde doelgebruiker wordt geweigerd.
+- Tests uitgebreid met nep-browserprofielen en native WLAN-geheugenlayout: 34 geisoleerde tests.
+- Integratietest op de tijdelijke GitHub Windows-runner voor installatie, taakregistratie, ACL's, snelkoppeling, CLI, rapportage, updates en taaktriggers. Alle opschoonfuncties staan tijdens deze test uit.
+- API-gedrag en browseropslaglocaties gecontroleerd aan de hand van primaire documentatie; bronnen en testgrenzen vastgelegd in `VALIDATION.md`.
+
+Live browserafsluiting, Wi-Fi-verwijdering en firewallreset zijn niet uitgevoerd. Controle van de eigen beheeromgeving blijft nodig voordat de utility breed wordt ingezet.
+
+
 ## [1.7.0-rc.1] - 2026-10-10
 
 Releasecandidate; echte installatie en opschoning vereisen nog acceptatie op een testapparaat.

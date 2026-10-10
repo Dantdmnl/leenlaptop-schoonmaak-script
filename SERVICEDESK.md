@@ -1,6 +1,6 @@
 # Servicedeskhandleiding
 
-Leenlaptop Schoonmaak 1.7.0-rc.1, 10 oktober 2026. Releasecandidate voor acceptatie op een testapparaat.
+Leenlaptop Schoonmaak 1.7.0, 10 oktober 2026.
 
 ## Installeren
 
@@ -35,7 +35,7 @@ Exitcode 0 is geslaagd, 1 is mislukt en 2 is gedeeltelijk geslaagd. `Planned` be
 
 ## Account en rechten
 
-De installatie koppelt de taak aan de SID van het gekozen leenaccount. Een apart beheeraccount mag installeren; opschonen als dat beheeraccount wordt geweigerd. Een standaardaccount kan zijn eigen bestanden opschonen, maar krijgt via de taak geen extra administratorrechten. Wi-Fi en firewallreset vereisen wel die rechten en leveren anders een gedeeltelijke status op.
+De installatie koppelt de taak aan de SID van het gekozen leenaccount en geeft het expliciet lees- en startrechten op die taak. Een apart beheeraccount mag installeren; opschonen als dat beheeraccount wordt geweigerd. Een standaardaccount kan zijn eigen bestanden opschonen, maar krijgt via de taak geen extra administratorrechten. Wi-Fi en firewallreset vereisen wel die rechten en leveren anders een gedeeltelijke status op.
 
 De programmabestanden en configuratie kunnen alleen door beheerders worden gewijzigd. De doelgebruiker kan de statusmap beschrijven. Statusbestanden zijn daarom geen fraudebestendige auditregistratie.
 
@@ -74,4 +74,4 @@ Gebruik een Windows-VM of testlaptop met gegevens die verwijderd mogen worden.
 - Start twee uitvoeringen tegelijk en controleer lock en status.
 - Test eventueel automatisch aanmelden pas nadat handmatige opschoning is goedgekeurd.
 
-Deze acceptatietest is geen onderdeel van de lokale ontwikkeltests en is voor 1.7.0 nog niet uitgevoerd. Geef bij escalatie de versie, actie, exitcode en laatste rapport mee; deel de configuratie alleen wanneer de Wi-Fi-uitzonderingen en doelaccountinformatie nodig zijn.
+Installatie, taakregistratie, bestandsrechten en updates worden op de tijdelijke Windows-runner van GitHub getest. De volledige acceptatietest met live browsers, Wi-Fi en firewall is niet uitgevoerd en blijft een controle voor de eigen beheeromgeving. Geef bij escalatie de versie, actie, exitcode en laatste rapport mee; deel de configuratie alleen wanneer de Wi-Fi-uitzonderingen en doelaccountinformatie nodig zijn.

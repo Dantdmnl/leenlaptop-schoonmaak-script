@@ -1,8 +1,6 @@
 # Leenlaptop Schoonmaak
 
-Windows-utility voor het lokaal opschonen van een leenaccount na gebruik. Versie **1.7.0-rc.1**, releasecandidate van **10 oktober 2026**. Vereist Windows 10/11 en Windows PowerShell 5.1.
-
-Deze versie is bedoeld voor acceptatie op een Windows-VM of testlaptop. De geisoleerde tests zijn uitgevoerd; echte installatie en opschoning zijn nog niet beoordeeld. Gebruik de acceptatietest in de servicedeskhandleiding voordat u deze versie breed inzet.
+Windows-utility voor het lokaal opschonen van een leenaccount na gebruik. Versie **1.7.0**, uitgebracht op **10 oktober 2026**. Vereist Windows 10/11 en Windows PowerShell 5.1.
 
 ## Gebruik
 
@@ -66,7 +64,7 @@ Ontbrekende sleutels krijgen hun standaardwaarde. Onbekende sleutels, ongeldige 
 
 Wi-Fi en firewallreset vereisen administratorrechten. Een taak met hoogste bevoegdheden geeft een standaardgebruiker geen administratorrechten. Deze onderdelen leveren zonder de benodigde rechten een gedeeltelijk resultaat op. Schakel ze uit wanneer een standaardaccount alleen zijn eigen gegevens moet opschonen.
 
-De utility werkt voor een expliciet doelaccount, niet voor alle profielen op een apparaat. Uitvoering vanuit een ander account wordt geweigerd. De taak gebruikt een interactieve sessie van het doelaccount. Installatie met een apart beheeraccount verandert de doelgebruiker niet.
+De utility werkt voor een expliciet doelaccount, niet voor alle profielen op een apparaat. Uitvoering vanuit een ander account wordt geweigerd, ook bij een voorvertoning van een geconfigureerde installatie. De taak gebruikt een interactieve sessie van het doelaccount. Installatie met een apart beheeraccount verandert de doelgebruiker niet. Het doelaccount krijgt expliciet lees- en startrechten op de taak, maar geen wijzigingsrechten.
 
 Gebruikersmappen buiten het huidige lokale profiel en bekende OneDrive-locaties worden geweigerd. Junctions, symbolische links en andere reparse points worden niet gevolgd en tellen als onvolledige opschoning. Andere synchronisatiesoftware wordt niet automatisch herkend; controleer de opslaglocaties vooraf.
 
@@ -108,6 +106,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Invoke-Tests.ps1
 .\tools\New-ReleaseArchive.ps1
 ```
 
-De tests gebruiken uitsluitend tijdelijke bestanden en gemockte systeemacties. Windows-CI voert parsercontrole, geselecteerde ScriptAnalyzer-regels, C#-compilatie en Pester-tests uit. De release bevat een ZIP en `SHA256SUMS.txt`.
+De 34 Pester-tests gebruiken uitsluitend tijdelijke bestanden en gemockte systeemacties, inclusief nep-browserprofielen. Windows-CI voert parsercontrole, geselecteerde ScriptAnalyzer-regels, C#-compilatie en deze tests uit. Daarnaast controleert een integratietest op de tijdelijke GitHub Windows-runner echte installatie, taakregistratie, taakrechten, NTFS-rechten, snelkoppeling, CLI, rapportage en updates. Alle opschoonfuncties zijn daar uitgeschakeld. Deze integratietest weigert uitvoering buiten GitHub Actions.
 
-Echte browsercleanup, taakregistratie, ACL-installatie, Wi-Fi-verwijdering en firewallreset moeten nog op een wegwerpaccount in een Windows-VM of testlaptop worden beoordeeld. Deze acties worden niet op de ontwikkelcomputer uitgevoerd. Zie [SERVICEDESK.md](SERVICEDESK.md) voor de acceptatietest en [AVG-COMPLIANCE.md](AVG-COMPLIANCE.md) voor de technische privacymaatregelen.
+Live browserafsluiting, Wi-Fi-verwijdering en firewallreset zijn niet uitgevoerd. Controleer deze functies en de eigen beheerconfiguratie op een wegwerpaccount voor brede uitrol. Er worden geen echte gebruikersgegevens op de ontwikkelcomputer opgeschoond. Zie [VALIDATION.md](VALIDATION.md) voor testscope en onderzoeksbronnen, [SERVICEDESK.md](SERVICEDESK.md) voor de acceptatietest en [AVG-COMPLIANCE.md](AVG-COMPLIANCE.md) voor de technische privacymaatregelen. De release bevat een volledig ZIP-archief en `SHA256SUMS.txt`.

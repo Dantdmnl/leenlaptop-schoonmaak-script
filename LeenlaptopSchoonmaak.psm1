@@ -1,6 +1,6 @@
 #requires -Version 5.1
 Set-StrictMode -Version 2.0
-$script:UtilityVersion = '1.7.0-rc.1'
+$script:UtilityVersion = '1.7.0'
 $script:Deadline = $null
 $script:TaskName = 'LeenlaptopSchoonmaak'
 $script:PackageFiles = @('LeenlaptopSchoonmaak.ps1', 'LeenlaptopSchoonmaak.psm1', 'config.example.json', 'WlanProfiles.cs')
