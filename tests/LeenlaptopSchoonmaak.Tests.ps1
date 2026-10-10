@@ -101,6 +101,7 @@ throw 'Mag nooit worden uitgevoerd'
                 Test-Path $keep.FullName | Should Be $true
                 $result.Removed | Should Be 0
                 $result.Status | Should Be 'Partial'
+                { Assert-SafeRoot (Join-Path $junction 'not-created') } | Should Throw
             } finally { [IO.Directory]::Delete($junction) }
         }
         It 'meldt gedeeltelijk succes bij een vergrendeld bestand' {

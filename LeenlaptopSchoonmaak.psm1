@@ -166,8 +166,12 @@ function Assert-SafeRoot {
     param([string]$Path)
     $fullPath = [IO.Path]::GetFullPath($Path).TrimEnd('\', '/')
     if ($fullPath -eq [IO.Path]::GetPathRoot($fullPath).TrimEnd('\', '/')) { throw 'Een schijfhoofdmap is geen toegestane opschoonlocatie.' }
-    if (-not (Test-Path -LiteralPath $fullPath)) { return }
-    $item = Get-Item -LiteralPath $fullPath -Force -ErrorAction Stop
+    $existingPath = $fullPath
+    while (-not (Test-Path -LiteralPath $existingPath)) {
+        $existingPath = [IO.Path]::GetDirectoryName($existingPath)
+        if (-not $existingPath) { throw 'Geen geldige bestaande bovenliggende map gevonden.' }
+    }
+    $item = Get-Item -LiteralPath $existingPath -Force -ErrorAction Stop
     if (-not $item.PSIsContainer) { throw 'Opschoonlocatie is geen map.' }
     while ($item) {
         if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Opschoonlocatie loopt via een junction of symbolische link.' }

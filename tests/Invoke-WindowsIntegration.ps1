@@ -31,7 +31,7 @@ try {
     $result = Invoke-LeenlaptopUtility -Action Install -SourcePath $source -InstallPath $installPath -ConfigPath $configPath -TargetUser $account
     if ($result.ExitCode -ne 0) { throw 'Eerste installatie is niet geslaagd.' }
     $task = Get-ScheduledTask -TaskName 'LeenlaptopSchoonmaak'
-    if (@($task.Triggers).Count -ne 0) { throw 'Er is onbedoeld een automatische trigger ingesteld.' }
+    if (@($task.Triggers | Where-Object { $_ }).Count -ne 0) { throw 'Er is onbedoeld een automatische trigger ingesteld.' }
     if ($task.Principal.LogonType -ne 'Interactive') { throw 'Taak gebruikt geen interactieve gebruikerscontext.' }
     if ($task.Actions.Arguments -notmatch '\s-Cleanup\s') { throw 'Taak verwijst niet naar de cleanup-modus.' }
     $service = New-Object -ComObject 'Schedule.Service'
