@@ -9,11 +9,10 @@ if not exist "%~dp0LeenlaptopSchoonmaak.psm1" (
     pause
     exit /b 1
 )
-set /p "targetUser=Doelaccount (bijvoorbeeld LAPTOP\leenaccount): "
-if not defined targetUser exit /b 1
+set /p "LEENLAPTOP_TARGET_USER=Doelaccount (bijvoorbeeld LAPTOP\leenaccount): "
+if not defined LEENLAPTOP_TARGET_USER exit /b 1
 set /p "proceed=Installeren voor dit account? (J/N): "
 if /i not "%proceed%"=="J" exit /b 0
-set "LEENLAPTOP_TARGET_USER=%targetUser%"
 set "LEENLAPTOP_SCRIPT=%~dp0LeenlaptopSchoonmaak.ps1"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& $env:LEENLAPTOP_SCRIPT -Install -TargetUser $env:LEENLAPTOP_TARGET_USER; exit $LASTEXITCODE"
 set "result=%errorlevel%"
