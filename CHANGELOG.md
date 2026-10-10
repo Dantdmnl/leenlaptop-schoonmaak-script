@@ -2,6 +2,40 @@
 
 Alle relevante wijzigingen aan het leenlaptop-schoonmaakscript worden in dit bestand vastgelegd.
 
+## [1.7.0-rc.1] - 2026-10-10
+
+Releasecandidate; echte installatie en opschoning vereisen nog acceptatie op een testapparaat.
+
+### Gewijzigd
+
+- Installatie, controle en opschoning zijn afzonderlijke acties; zonder argumenten wordt alleen gecontroleerd.
+- Externe JSON-configuratie met typevalidatie en behoud van instellingen bij updates.
+- Migratie leest letterlijke instellingen uit oude scripts zonder deze uit te voeren.
+- Expliciet doelaccount op basis van SID; opschoning vanuit een ander account wordt geweigerd.
+- Geplande taak gebruikt de interactieve sessie van het doelaccount. Automatische uitvoering bij aanmelden vereist expliciete configuratie.
+- Volledige lokale browseropslag wordt gewist, inclusief meerdere en aangepaste profielen.
+- Resultaten per stap, JSON-rapporten en exitcodes voor geslaagd, gedeeltelijk geslaagd en mislukt.
+- `-WhatIf` zonder installatie-, log- of statuswijzigingen.
+- SHA256-verificatie, pakketmanifest, installatiebackups en herstel van bestanden en taak bij mislukte updates.
+- NTFS-rechten voor programma, configuratie en statusmap; lock tegen gelijktijdige uitvoering.
+- Bestandloops en native commando's respecteren de tijdslimiet; taak heeft een maximale uitvoeringstijd.
+- Links en junctions worden niet gevolgd; locaties buiten het lokale profiel en bekende OneDrive-locaties worden geweigerd.
+- Wi-Fi-detectie gebruikt de Windows WLAN-API en is onafhankelijk van de taal van netsh-uitvoer.
+- Windows-CI met parsercontrole, ScriptAnalyzer, C#-compilatie en geisoleerde Pester-tests.
+- Volledig releasearchief met SHA256-checksum en bijgewerkte beheerdocumentatie.
+
+### Migratie
+
+- Losse `.ps1`- en `.bat`-bestanden zijn niet meer voldoende; pak het volledige archief uit.
+- `ForceUpdate`, configureerbare taak-/bestandsnamen en zelfinstallatie bij cleanup zijn vervallen.
+- Nieuwe statusbestanden staan in `state`. Legacy-mappen en bestaande Event Log-gegevens blijven behouden voor handmatige beoordeling.
+- Nieuwe versies schrijven geen Windows Event Log-berichten meer.
+
+### Validatie
+
+- Systeemacties worden gemockt; bestandtests gebruiken alleen tijdelijke testdata.
+- Echte installatie en opschoning op een Windows-VM/testlaptop zijn nog niet uitgevoerd.
+
 ## [1.6.3] - 2026-07-02
 
 ### Gewijzigd

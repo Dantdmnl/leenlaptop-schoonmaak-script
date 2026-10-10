@@ -1,188 +1,113 @@
-# leenlaptop-schoonmaak-script
+# Leenlaptop Schoonmaak
 
-PowerShell-script voor het opschonen en opnieuw standaardiseren van leenlaptops na gebruik. Het script verwijdert lokale sporen van de vorige gebruiker, legt een beperkte operationele audit trail vast en geeft na afloop een duidelijke status voor servicedesk of ICT-beheer.
+Windows-utility voor het lokaal opschonen van een leenaccount na gebruik. Versie **1.7.0-rc.1**, releasecandidate van **10 oktober 2026**. Vereist Windows 10/11 en Windows PowerShell 5.1.
 
-**Versie:** 1.6.3
-**Release datum:** 2 juli 2026
-**Platform:** Windows 10/11, PowerShell 5.1 of hoger
+Deze versie is bedoeld voor acceptatie op een Windows-VM of testlaptop. De geisoleerde tests zijn uitgevoerd; echte installatie en opschoning zijn nog niet beoordeeld. Gebruik de acceptatietest in de servicedeskhandleiding voordat u deze versie breed inzet.
 
-## Doel
+## Gebruik
 
-Dit project is bedoeld voor organisaties die leenlaptops opnieuw willen uitgeven zonder een volledige herinstallatie of centraal beheersysteem als harde voorwaarde. De oplossing draait lokaal, is via configuratie aan te passen en houdt rekening met AVG-uitgangspunten zoals dataminimalisatie en beperkte logretentie.
-
-## Functionaliteit
-
-- Sluit browsers en verwijdert browserdata voor Edge, Chrome en Firefox.
-- Verwijdert Wi-Fi-profielen, met optionele whitelist voor toegestane netwerken.
-- Verwijdert tijdelijke bestanden en oude bestanden uit Downloads.
-- Kan Documenten, Afbeeldingen, Video's en Muziek opschonen, maar deze opties staan standaard uit.
-- Reset Windows Firewall naar standaardinstellingen.
-- Installeert zichzelf in `C:\ProgramData\LeenlaptopSchoonmaak`.
-- Registreert een geplande taak en maakt een bureaubladsnelkoppeling aan.
-- Roteert logs en verwijdert oude logs/backups volgens retentie-instellingen.
-- Schrijft een laatste status naar `laatste_status.txt`.
-
-## Privacy en logging
-
-Het script logt alleen operationele informatie die nodig is voor controle en troubleshooting:
-
-- tijdstip van uitvoering;
-- uitgevoerde acties;
-- aantallen verwijderde items;
-- foutmeldingen en statuscodes;
-- scriptversie.
-
-Het script logt geen gebruikersnamen, bestandsnamen, browsergeschiedenis, IP-adressen of Wi-Fi-netwerknamen naar het Windows Event Log. Detailmeldingen die mogelijk herleidbare informatie bevatten, blijven beperkt tot de lokale log en worden waar nodig niet naar Event Log doorgeschreven.
-
-Standaard worden logs en scriptbackups maximaal 30 dagen bewaard.
-
-## Vereisten
-
-- Windows 10 of Windows 11.
-- PowerShell 5.1 of hoger.
-- Administratorrechten voor installatie, geplande taak, Wi-Fi cleanup en firewall reset.
-- Ongeveer 5 MB vrije ruimte onder `C:\ProgramData`.
-
-Het script gebruikt `Get-CimInstance` in plaats van WMIC en is daarmee geschikt voor recente Windows 11-versies waarin WMIC niet meer beschikbaar is.
-
-## Installatie
-
-1. Plaats `Install-LeenlaptopSchoonmaak.bat` en `LeenlaptopSchoonmaak.ps1` in dezelfde map, bijvoorbeeld op een USB-stick of lokale tijdelijke map.
-2. Start `Install-LeenlaptopSchoonmaak.bat` met **Als administrator uitvoeren**.
-3. Controleer de getoonde configuratie.
-4. Bevestig de installatie met `J`.
-5. Controleer na afloop:
-   - scriptlocatie: `C:\ProgramData\LeenlaptopSchoonmaak\LeenlaptopSchoonmaak.ps1`;
-   - taakplanner: taak `LeenlaptopSchoonmaak`;
-   - logbestand: `C:\ProgramData\LeenlaptopSchoonmaak\log.txt`;
-   - snelkoppeling: `Leenlaptop Opschonen.lnk`.
-
-Handmatige installatie kan ook:
+Pak het volledige releasearchief uit. De PowerShell-entrypoint, module, C#-helper en voorbeeldconfiguratie moeten bij elkaar blijven.
 
 ```powershell
-Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
-cd "D:\pad\naar\script"
-.\LeenlaptopSchoonmaak.ps1
+# Alleen controleren; dit is ook de standaard zonder argumenten.
+.\LeenlaptopSchoonmaak.ps1 -Check
+
+# Bekijk de geplande stappen zonder iets te wijzigen, ook voor installatie.
+.\LeenlaptopSchoonmaak.ps1 -Cleanup -WhatIf
+
+# Installeer als administrator voor een expliciet gekozen leenaccount.
+.\LeenlaptopSchoonmaak.ps1 -Install -TargetUser 'LAPTOP\leenaccount'
 ```
+
+Installatie verwijdert geen gebruikersgegevens. Het doelaccount moet al een lokaal profiel hebben: log er eerst eenmaal mee in. `Install-LeenlaptopSchoonmaak.bat` vraagt om hetzelfde account en moet als administrator worden gestart.
+
+Log vervolgens in als het doelaccount. Handmatig opschonen kan via **Leenlaptop Opschonen** op het openbare bureaublad of met:
+
+```powershell
+& 'C:\ProgramData\LeenlaptopSchoonmaak\LeenlaptopSchoonmaak.ps1' -Cleanup
+```
+
+Opschoning verwijdert gegevens definitief. Browseropslag wordt volledig leeggemaakt, inclusief cookies, opgeslagen aanmeldingen, instellingen, extensies en lokale bladwijzers. Maak noodzakelijke gegevens vooraf elders beschikbaar. Dit is geen schijfwisprogramma of vervanging voor een herinstallatie.
+
+Browsercleanup omvat de standaard opslaglocaties van deze drie browsers, inclusief profielen binnen die locaties. Draagbare browsers en profielen die via command-line-opties elders zijn geplaatst vallen buiten de scope.
 
 ## Configuratie
 
-Alle instellingen staan bovenin `LeenlaptopSchoonmaak.ps1` in het configuratieblok.
+Instellingen staan na installatie in `C:\ProgramData\LeenlaptopSchoonmaak\config.json`. Alleen beheerders kunnen dit bestand en de programmabestanden wijzigen. Het doelaccount kan alleen de statusmap beschrijven.
 
-### Basis
+Voor een eerste installatie kunt u `config.example.json` kopieren naar `config.json` naast de releasebestanden. Bij updates krijgt de bestaande geinstalleerde configuratie voorrang. Met `-ConfigPath` kiest u expliciet een ander JSON-bestand. Een ontbrekend of ongeldig opgegeven bestand stopt de uitvoering.
 
-```powershell
-[string]$HiddenFolderName = 'LeenlaptopSchoonmaak'
-[string]$TaskName         = 'LeenlaptopSchoonmaak'
-[string]$LogFileName      = 'log.txt'
-[string]$EventSource      = 'LeenlaptopSchoonmaak'
-[string]$ScriptVersion    = '1.6.3'
+Voorbeeld van enkele instellingen, onderdeel van een volledig JSON-object:
+
+```json
+{
+  "EnableBrowserCleanup": true,
+  "AllowedWiFi": ["kantoor-wifi"],
+  "DownloadsMaxAgeDays": 7,
+  "RunAtLogon": false,
+  "EnableFirewallReset": false
+}
 ```
 
-### Netwerk en browsers
+Ontbrekende sleutels krijgen hun standaardwaarde. Onbekende sleutels, ongeldige typen en niet ondersteunde schema's worden geweigerd. `-PrintConfig` schrijft de effectieve configuratie als JSON naar de console.
+
+| Onderdeel | Standaard |
+| --- | --- |
+| Browsers | Edge, Chrome en Firefox opschonen |
+| Wi-Fi | Alle gevonden profielen verwijderen; `AllowedWiFi` bevat letterlijke, hoofdlettergevoelige uitzonderingen |
+| Temp | Bestanden verwijderen, lege submappen opruimen |
+| Downloads | Alleen bestanden ouder dan 7 dagen en lege oude submappen |
+| Documenten, Afbeeldingen, Video's, Muziek | Uit |
+| Firewallreset | Aan; verwijdert aangepaste firewallregels |
+| Geplande taak en snelkoppeling | Aan; taak standaard alleen handmatig starten |
+| Automatisch bij aanmelden | Uit; vereist `RunAtLogon: true` en herinstallatie |
+| Retentie | 30 dagen; maximaal 5 installatiebackups |
+| Uitvoeringstijd | 5 minuten |
+
+Wi-Fi en firewallreset vereisen administratorrechten. Een taak met hoogste bevoegdheden geeft een standaardgebruiker geen administratorrechten. Deze onderdelen leveren zonder de benodigde rechten een gedeeltelijk resultaat op. Schakel ze uit wanneer een standaardaccount alleen zijn eigen gegevens moet opschonen.
+
+De utility werkt voor een expliciet doelaccount, niet voor alle profielen op een apparaat. Uitvoering vanuit een ander account wordt geweigerd. De taak gebruikt een interactieve sessie van het doelaccount. Installatie met een apart beheeraccount verandert de doelgebruiker niet.
+
+Gebruikersmappen buiten het huidige lokale profiel en bekende OneDrive-locaties worden geweigerd. Junctions, symbolische links en andere reparse points worden niet gevolgd en tellen als onvolledige opschoning. Andere synchronisatiesoftware wordt niet automatisch herkend; controleer de opslaglocaties vooraf.
+
+## Resultaten
+
+| Exitcode | Betekenis |
+| --- | --- |
+| `0` | Geslaagd, of een geslaagde voorvertoning (`Planned`) |
+| `1` | Mislukt, configuratiefout of afgebroken uitvoering |
+| `2` | Gedeeltelijk geslaagd; bijvoorbeeld vergrendelde bestanden of ontbrekende rechten |
+
+De status is een technisch resultaat van de ingeschakelde stappen. Een succesvolle installatie of opschoning is geen verklaring dat het hele apparaat schoon is. Uitgeschakelde onderdelen en andere gebruikersprofielen vallen buiten de scope.
+
+Statusbestanden staan onder `C:\ProgramData\LeenlaptopSchoonmaak\state`:
+
+- `laatste_status.txt`: leesbare samenvatting;
+- `laatste_status.json`: resultaat per stap en exitcode;
+- `run_*.json`: uitvoeringshistorie;
+- `log.txt`: korte operationele log.
+
+`-Check`, `-PrintConfig` en `-WhatIf` schrijven geen logs, status of lockbestanden. De console kan configuratiepaden en instellingen tonen; opgeslagen rapporten bevatten geen gebruikersnamen, bestandsnamen of Wi-Fi-namen. Vanaf 1.7 worden geen nieuwe Windows Event Log-berichten geschreven.
+
+Een bestandslock voorkomt overlappende installatie en opschoning. De tijdslimiet wordt tussen stappen en tijdens bestandloops gecontroleerd; native commando's worden bij overschrijding gestopt. Een al lopende Windows-bestands- of CIM-aanroep kan nog moeten terugkeren. Taakplanner stelt daarnaast een harde uitvoeringstijd in. Opschoning is niet terug te draaien.
+
+## Updates en migratie
+
+Installeer een update vanuit een aparte uitgepakte releasemap. De utility bewaart bestaande JSON-instellingen. Bij versies 1.5/1.6 leest hij bekende letterlijke instellingen uit het oude script zonder dat script uit te voeren. Dynamische instellingen vereisen een expliciet JSON-bestand. Automatische uitvoering bij aanmelden wordt bij deze migratie uitgeschakeld.
+
+De installatie maakt een backup van bestaande programmabestanden, configuratie, taak en openbare snelkoppeling. Nieuwe bestanden worden eerst voorbereid en met SHA256 gecontroleerd. Na succesvolle installatie worden de oude taak `Opstart-Script` en het oude script in de huidige installatiemap verwijderd. Bij een mislukte update worden de vorige bestanden en taak teruggezet. Backups staan in `backups`.
+
+Een oude map `%LOCALAPPDATA%\HiddenScripts`, oude gebruikerssnelkoppelingen en bestaande Event Log-gegevens blijven behouden voor handmatige beoordeling. Verwijder deze na een gecontroleerde proef op een testlaptop. Bij aangepaste oude installatielocaties gebruikt u `-InstallPath`; dit pad moet eindigen op `LeenlaptopSchoonmaak`. `-ConfigPath` kan instellingen uit een voorbereide JSON-configuratie overnemen.
+
+Het geinstalleerde manifest controleert pakketintegriteit voor opschoning. Pas alleen `config.json` aan; wijzigingen aan programmabestanden vereisen herinstallatie. De manifestcontrole detecteert beschadiging, maar vervangt geen digitale ondertekening.
+
+## Ontwikkeling en validatie
 
 ```powershell
-[string[]]$AllowedWiFi = @()
-[string[]]$BrowserList = @('msedge','firefox','chrome')
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Invoke-Tests.ps1
+.\tools\New-ReleaseArchive.ps1
 ```
 
-Gebruik altijd quotes in arrays:
+De tests gebruiken uitsluitend tijdelijke bestanden en gemockte systeemacties. Windows-CI voert parsercontrole, geselecteerde ScriptAnalyzer-regels, C#-compilatie en Pester-tests uit. De release bevat een ZIP en `SHA256SUMS.txt`.
 
-```powershell
-[string[]]$AllowedWiFi = @('kantoor-wifi', 'gast-netwerk')
-```
-
-Een lege `AllowedWiFi` betekent dat alle gevonden Wi-Fi-profielen worden verwijderd.
-
-### Opschoning
-
-```powershell
-[bool] $EnableBrowserCleanup   = $true
-[bool] $EnableWiFiCleanup      = $true
-[bool] $EnableTempCleanup      = $true
-[bool] $EnableDownloadsCleanup = $true
-[int]  $DownloadsMaxAgeDays    = 7
-
-[bool] $EnableDocumentsCleanup = $false
-[int]  $DocumentsMaxAgeDays    = 30
-[bool] $EnablePicturesCleanup  = $false
-[int]  $PicturesMaxAgeDays     = 30
-[bool] $EnableVideosCleanup    = $false
-[int]  $VideosMaxAgeDays       = 30
-[bool] $EnableMusicCleanup     = $false
-[int]  $MusicMaxAgeDays        = 30
-
-[bool] $EnableFirewallReset    = $true
-```
-
-De cleanup van gebruikersmappen verwijdert oude bestanden en ruimt daarna alleen lege oude submappen op. Een oude map met nieuwere bestanden wordt dus niet volledig verwijderd.
-
-### Onderhoud en limieten
-
-```powershell
-[int]  $MaxLogSizeMB        = 5
-[int]  $LogRetentionDays    = 30
-[int]  $MaxRetries          = 3
-[int]  $MaxExecutionMinutes = 5
-[bool] $EnableBackupCleanup = $true
-[int]  $MaxBackupCount      = 5
-[bool] $ForceUpdate         = $false
-```
-
-Zet `ForceUpdate` alleen tijdelijk op `$true` wanneer een bestaande installatie expliciet overschreven moet worden. De gekopieerde versie zet deze waarde daarna automatisch terug naar `$false`.
-
-## Bestandslocaties
-
-| Type | Locatie |
-|------|---------|
-| Hoofdlog | `C:\ProgramData\LeenlaptopSchoonmaak\log.txt` |
-| Gearchiveerde logs | `C:\ProgramData\LeenlaptopSchoonmaak\script_YYYYMMDD_HHMMSS.log` |
-| Laatste status | `C:\ProgramData\LeenlaptopSchoonmaak\laatste_status.txt` |
-| Versiebestand | `C:\ProgramData\LeenlaptopSchoonmaak\version.txt` |
-| Scriptbackups | `C:\ProgramData\LeenlaptopSchoonmaak\backup_YYYYMMDD_HHMMSS_*.ps1` |
-| Snelkoppeling | `%USERPROFILE%\Desktop\Leenlaptop Opschonen.lnk` |
-
-## Controle en troubleshooting
-
-```powershell
-Get-ScheduledTask -TaskName "LeenlaptopSchoonmaak"
-Get-Content "C:\ProgramData\LeenlaptopSchoonmaak\log.txt" -Tail 50
-Get-Content "C:\ProgramData\LeenlaptopSchoonmaak\laatste_status.txt"
-Get-EventLog -LogName Application -Source "LeenlaptopSchoonmaak" -Newest 10
-```
-
-Veelvoorkomende oorzaken:
-
-| Probleem | Controle |
-|----------|----------|
-| Script start niet | Administratorrechten, ExecutionPolicy en scriptlocatie controleren |
-| Geen logs | Schrijfrechten onder `C:\ProgramData\LeenlaptopSchoonmaak` controleren |
-| Wi-Fi cleanup werkt niet | Controleren of de taak met hoogste rechten draait |
-| Firewall reset faalt | Beleid, rechten en Windows Firewall-services controleren |
-| Timeout | `MaxExecutionMinutes` verhogen of cleanup scope beperken |
-
-## Migratie
-
-Versies vanaf 1.6.0 gebruiken `C:\ProgramData\LeenlaptopSchoonmaak`. Oude installaties op `%LOCALAPPDATA%\HiddenScripts` worden bij herinstallatie automatisch gemigreerd. Daarbij verwijdert het script ook de oude geplande taak `Opstart-Script` en oude snelkoppelingen zoals `Terug naar start.lnk`.
-
-Vanaf 1.6.3 heet het installatiescript `Install-LeenlaptopSchoonmaak.bat` en het PowerShell-script `LeenlaptopSchoonmaak.ps1`. Een oude geinstalleerde `opstart-script.ps1` wordt na een succesvolle kopie van de nieuwe scriptnaam verwijderd.
-
-## Validatie
-
-Voor deze release zijn de volgende controles uitgevoerd:
-
-```powershell
-# PowerShell parser
-[System.Management.Automation.Language.Parser]::ParseFile(...)
-
-# Configuratie-export
-.\LeenlaptopSchoonmaak.ps1 -PrintConfig
-
-# CI-regels uit GitHub workflow
-Invoke-ScriptAnalyzer -Path .\LeenlaptopSchoonmaak.ps1 -IncludeRule PSAvoidGlobalAliases,PSAvoidUsingConvertToSecureStringWithPlainText
-
-# Git whitespace check
-git diff --check
-```
-
-Het volledige opschoonscript is niet automatisch uitgevoerd tijdens validatie, omdat dit echte lokale data en systeeminstellingen kan wijzigen.
+Echte browsercleanup, taakregistratie, ACL-installatie, Wi-Fi-verwijdering en firewallreset moeten nog op een wegwerpaccount in een Windows-VM of testlaptop worden beoordeeld. Deze acties worden niet op de ontwikkelcomputer uitgevoerd. Zie [SERVICEDESK.md](SERVICEDESK.md) voor de acceptatietest en [AVG-COMPLIANCE.md](AVG-COMPLIANCE.md) voor de technische privacymaatregelen.

@@ -1,199 +1,77 @@
-# Servicedeskhandleiding - Leenlaptop Schoonmaak Script
+# Servicedeskhandleiding
 
-**Versie:** 1.6.3
-**Doelgroep:** servicedeskmedewerkers en ICT-beheerders
-**Laatst bijgewerkt:** 2 juli 2026
+Leenlaptop Schoonmaak 1.7.0-rc.1, 10 oktober 2026. Releasecandidate voor acceptatie op een testapparaat.
 
-## Korte beschrijving
+## Installeren
 
-Het script schoont een leenlaptop lokaal op na gebruik. Het verwijdert browserdata, Wi-Fi-profielen, tijdelijke bestanden en oude downloads. Documenten en media-mappen blijven standaard ongemoeid, tenzij ICT deze opties bewust inschakelt.
-
-Het script werkt op de context van de ingelogde gebruiker. Daardoor worden bijvoorbeeld de Downloads-map en `%TEMP%` van die gebruiker opgeschoond, niet die van een beheeraccount.
-
-## Eerste installatie
-
-1. Download of kopieer de bestanden `Install-LeenlaptopSchoonmaak.bat` en `LeenlaptopSchoonmaak.ps1`.
-2. Plaats beide bestanden in dezelfde map.
-3. Start `Install-LeenlaptopSchoonmaak.bat` met **Als administrator uitvoeren**.
-4. Controleer de configuratie die in het venster wordt getoond.
-5. Typ `J` om door te gaan.
-
-Controleer na installatie:
-
-- geplande taak: `LeenlaptopSchoonmaak`;
-- scriptlocatie: `C:\ProgramData\LeenlaptopSchoonmaak\LeenlaptopSchoonmaak.ps1`;
-- logbestand: `C:\ProgramData\LeenlaptopSchoonmaak\log.txt`;
-- snelkoppeling: `Leenlaptop Opschonen.lnk`.
-
-## Dagelijks gebruik
-
-Het script draait automatisch wanneer de gebruiker inlogt. Handmatig starten kan via de bureaubladsnelkoppeling of via Taakplanner:
+1. Pak het volledige releasearchief uit in een tijdelijke map.
+2. Controleer welk leenaccount moet worden opgeschoond en log er eenmaal mee in.
+3. Start de installer als administrator en geef het doelaccount op, bijvoorbeeld `LAPTOP\leenaccount`.
+4. Controleer dat de installatie eindigt met exitcode 0.
+5. Log in als het doelaccount. Controleer eerst met `-Check` en bekijk daarna `-Cleanup -WhatIf`.
 
 ```powershell
-Start-ScheduledTask -TaskName "LeenlaptopSchoonmaak"
+$utility = 'C:\ProgramData\LeenlaptopSchoonmaak\LeenlaptopSchoonmaak.ps1'
+& $utility -Check
+& $utility -Cleanup -WhatIf
 ```
 
-Controleer de laatste status:
+Installatie voert geen opschoning uit. Een gewone start zonder argumenten controleert alleen. De snelkoppeling op het openbare bureaublad start wel de opschoning, via de geplande taak wanneer die is ingeschakeld. Gebruik die alleen wanneer het doelaccount is aangemeld. Gebruik `Get-ScheduledTaskInfo` om een handmatig gestarte taak te controleren; de snelkoppeling wacht niet op het resultaat.
+
+## Opschonen na gebruik
+
+1. Maak te bewaren gegevens buiten het leenaccount beschikbaar.
+2. Controleer de instellingen in `config.json`, waaronder firewallreset en Wi-Fi-uitzonderingen.
+3. Start **Leenlaptop Opschonen** of voer `-Cleanup` uit als het doelaccount.
+4. Controleer het tijdstip, de actie en alle stapresultaten in de laatste status.
 
 ```powershell
-Get-Content "C:\ProgramData\LeenlaptopSchoonmaak\laatste_status.txt"
+Get-Content 'C:\ProgramData\LeenlaptopSchoonmaak\state\laatste_status.txt'
+Get-Content 'C:\ProgramData\LeenlaptopSchoonmaak\state\laatste_status.json' -Raw | ConvertFrom-Json
+Get-ScheduledTaskInfo -TaskName 'LeenlaptopSchoonmaak'
 ```
 
-## Standaardconfiguratie
+Exitcode 0 is geslaagd, 1 is mislukt en 2 is gedeeltelijk geslaagd. `Planned` betekent dat er niets is uitgevoerd. Een installatieresultaat bewijst niet dat er is opgeschoond. Beoordeel de status samen met de ingeschakelde onderdelen.
 
-| Onderdeel | Standaard | Toelichting |
-|-----------|-----------|-------------|
-| Browser cleanup | Aan | Edge, Chrome en Firefox |
-| Wi-Fi cleanup | Aan | Alle profielen verwijderen, tenzij whitelist is gevuld |
-| Temp cleanup | Aan | `%TEMP%` van de ingelogde gebruiker |
-| Downloads cleanup | Aan | Bestanden ouder dan 7 dagen |
-| Documenten cleanup | Uit | Alleen inschakelen na expliciet besluit |
-| Afbeeldingen/Video's/Muziek cleanup | Uit | Alleen inschakelen na expliciet besluit |
-| Firewall reset | Aan | Vereist administratorrechten |
-| Logretentie | 30 dagen | Configureerbaar |
+## Account en rechten
 
-## Logs lezen
+De installatie koppelt de taak aan de SID van het gekozen leenaccount. Een apart beheeraccount mag installeren; opschonen als dat beheeraccount wordt geweigerd. Een standaardaccount kan zijn eigen bestanden opschonen, maar krijgt via de taak geen extra administratorrechten. Wi-Fi en firewallreset vereisen wel die rechten en leveren anders een gedeeltelijke status op.
 
-Logbestand:
+De programmabestanden en configuratie kunnen alleen door beheerders worden gewijzigd. De doelgebruiker kan de statusmap beschrijven. Statusbestanden zijn daarom geen fraudebestendige auditregistratie.
 
-```text
-C:\ProgramData\LeenlaptopSchoonmaak\log.txt
-```
+## Instellingen wijzigen
 
-Voorbeeld:
+Wijzig als administrator `C:\ProgramData\LeenlaptopSchoonmaak\config.json`. Booleanwaarden zijn `true` of `false`, aantallen zijn gehele getallen en uitzonderingslijsten zijn JSON-arrays. Controleer wijzigingen met `-Check`.
 
-```text
-2026-07-02 09:15:23 [INFO] START opschoning leenlaptop (versie 1.6.3)
-2026-07-02 09:15:24 [INFO] Browser gestopt: chrome (poging 1)
-2026-07-02 09:15:26 [INFO] Wi-Fi opschoning voltooid: 3 verwijderd, 1 behouden
-2026-07-02 09:15:27 [INFO] Temp-bestanden verwijderd (ongeveer 145 items)
-2026-07-02 09:15:28 [INFO] Downloads-map opgeschoond: 8 items verwijderd (8 bestanden, 0 lege mappen; ouder dan 7 dagen)
-2026-07-02 09:15:30 [INFO] EINDE opschoning - alle taken succesvol voltooid
-```
+Wijzigingen aan opschooninstellingen gelden bij de volgende uitvoering. Instellingen voor snelkoppeling, geplande taak, doelaccount en uitvoeringstijd van de taak vereisen herinstallatie vanuit een uitgepakte release. `RunAtLogon` staat standaard uit. Inschakelen betekent gegevens verwijderen bij aanmelden; informeer gebruikers vooraf over dit gedrag.
 
-Logniveaus:
+## Problemen
 
-| Niveau | Betekenis |
-|--------|-----------|
-| `INFO` | Normale voortgang |
-| `WARN` | Actie is overgeslagen of gedeeltelijk mislukt |
-| `ERROR` | Kritieke fout of handmatige controle nodig |
+| Probleem | Actie |
+| --- | --- |
+| Ander account dan doelaccount | Meld het doelaccount aan; gebruik een beheeraccount alleen voor installatie |
+| Gedeeltelijk resultaat | Controleer stapresultaten, benodigde rechten, locks en overgeslagen links |
+| Gewijzigd of onvolledig pakket | Herinstalleer vanuit het volledige releasearchief |
+| Omgeleide gebruikersmap | Controleer de opslaglocatie; de utility weigert locaties buiten het lokale profiel en bekende OneDrive-mappen |
+| Utility al actief | Wacht op de bestaande uitvoering; verwijder de lock niet tijdens gebruik |
+| Taak start niet | Controleer dat het doelaccount is aangemeld en de taak aanwezig is |
+| Tijdslimiet bereikt | Onderzoek de omvang en locks; verhoog daarna eventueel de limiet en werk de taak bij |
+| Geen nieuw rapport | Controleer consolefout, taskresultaat en schrijftoegang; een oud rapport hoort niet bij de huidige poging |
 
-## Veelvoorkomende problemen
+Bij een mislukte installatie worden bestanden en taak uit de backup hersteld. Als ook herstel faalt, blijft de backup in `backups` staan. Bewaar de foutmelding en herstel eerst op een testapparaat. Kopieer niet zomaar losse programmabestanden naar de installatiemap: de manifestcontrole zal dan falen.
 
-### Script draait niet bij inloggen
+## Acceptatietest op een wegwerpaccount
 
-Controleer:
+Gebruik een Windows-VM of testlaptop met gegevens die verwijderd mogen worden.
 
-```powershell
-Get-ScheduledTask -TaskName "LeenlaptopSchoonmaak"
-Get-ScheduledTaskInfo -TaskName "LeenlaptopSchoonmaak"
-```
+- Installeer met een apart beheeraccount voor een aangemeld testaccount. Controleer taakprincipal, ACL's en snelkoppeling.
+- Controleer dat installatie, gewone start en `-WhatIf` geen browserdata of testbestanden verwijderen.
+- Maak meerdere browserprofielen met tijdelijke geschiedenis, opgeslagen aanmeldingen en bladwijzers. Controleer de volledige lokale browseropslag na cleanup.
+- Plaats oude en recente bestanden in Downloads, inclusief een oude map met een recent bestand. Alleen de oude bestanden mogen verdwijnen.
+- Controleer dat een standaardaccount gedeeltelijk resultaat krijgt voor ingeschakelde beheeracties.
+- Controleer op een geschikte testconfiguratie Wi-Fi-uitzonderingen en firewallreset.
+- Upgrade vanaf 1.6.3 met afwijkende instellingen. Controleer behoud van configuratie, backups en verwijdering van de oude taak na succesvolle installatie.
+- Start twee uitvoeringen tegelijk en controleer lock en status.
+- Test eventueel automatisch aanmelden pas nadat handmatige opschoning is goedgekeurd.
 
-De taak moet aanwezig zijn en met hoogste rechten draaien. Herinstalleer via `Install-LeenlaptopSchoonmaak.bat` als de taak ontbreekt of verkeerd is ingesteld.
-
-### Wi-Fi-profielen worden niet verwijderd
-
-Waarschijnlijke oorzaak: het script draait zonder administratorrechten. Controleer of de geplande taak is ingesteld op **Met hoogste bevoegdheden uitvoeren**.
-
-### Snelkoppeling staat op het verkeerde bureaublad
-
-Dit kan gebeuren wanneer installatie vanuit een andere beheersessie is uitgevoerd. Log lokaal in als de doelgebruiker en voer de installatie opnieuw uit als administrator, of plaats de snelkoppeling handmatig op het juiste bureaublad.
-
-### Gebruiker mist bestanden
-
-Controleer eerst welke cleanup-opties actief zijn in `LeenlaptopSchoonmaak.ps1`. Standaard worden Documenten en media-mappen niet opgeschoond. Downloads worden standaard alleen opgeschoond voor bestanden ouder dan 7 dagen. Oude mappen worden alleen verwijderd wanneer ze leeg zijn.
-
-Escaleren naar ICT wanneer:
-
-- de gebruiker belangrijke data mist;
-- Documenten of media-cleanup is ingeschakeld;
-- de log `ERROR`-meldingen bevat;
-- de situatie niet uit de configuratie te verklaren is.
-
-### Geen logbestand
-
-Controleer of de map bestaat en schrijfbaar is:
-
-```powershell
-Test-Path "C:\ProgramData\LeenlaptopSchoonmaak"
-```
-
-Start het script daarna opnieuw als administrator.
-
-## Configuratie aanpassen
-
-Configuratie staat in:
-
-```text
-C:\ProgramData\LeenlaptopSchoonmaak\LeenlaptopSchoonmaak.ps1
-```
-
-Belangrijke regels:
-
-```powershell
-[string[]]$AllowedWiFi = @()
-[string[]]$BrowserList = @('msedge','firefox','chrome')
-
-[bool] $EnableDownloadsCleanup = $true
-[int]  $DownloadsMaxAgeDays    = 7
-
-[bool] $EnableDocumentsCleanup = $false
-[bool] $EnablePicturesCleanup  = $false
-[bool] $EnableVideosCleanup    = $false
-[bool] $EnableMusicCleanup     = $false
-```
-
-Gebruik altijd quotes in arrays:
-
-```powershell
-[string[]]$AllowedWiFi = @('kantoor-wifi', 'gast-netwerk')
-```
-
-Gebruik `Install-LeenlaptopSchoonmaak.bat` niet opnieuw na lokale maatwerkaanpassingen, tenzij de lokale configuratie opnieuw mag worden overschreven.
-
-## Migratie vanaf oudere versies
-
-Oude versies gebruikten:
-
-- map: `%LOCALAPPDATA%\HiddenScripts`;
-- taak: `Opstart-Script`;
-- script: `opstart-script.ps1`;
-- snelkoppeling: `Terug naar start.lnk` of `Laptop Opschonen.lnk`.
-
-Vanaf 1.6.0 gebruikt het script:
-
-- map: `C:\ProgramData\LeenlaptopSchoonmaak`;
-- taak: `LeenlaptopSchoonmaak`;
-- script: `LeenlaptopSchoonmaak.ps1`;
-- snelkoppeling: `Leenlaptop Opschonen.lnk`.
-
-De migratie wordt automatisch uitgevoerd bij herinstallatie. Oude scriptkopieen worden gebackupt en daarna verwijderd als de nieuwe scriptnaam goed is geplaatst. Als dit niet lukt:
-
-```powershell
-Unregister-ScheduledTask -TaskName "Opstart-Script" -Confirm:$false
-```
-
-Verwijder daarna oude snelkoppelingen handmatig en draai `Install-LeenlaptopSchoonmaak.bat` opnieuw als administrator.
-
-## Escalatie-informatie
-
-Geef bij escalatie minimaal mee:
-
-- `C:\ProgramData\LeenlaptopSchoonmaak\log.txt`;
-- `C:\ProgramData\LeenlaptopSchoonmaak\laatste_status.txt`;
-- Windows-versie en computernaam;
-- omschrijving van de handeling die fout ging;
-- eventuele screenshot van de foutmelding.
-
-## Checklist nieuwe leenlaptop
-
-- [ ] Windows-updates uitgevoerd.
-- [ ] Beveiligingssoftware actief.
-- [ ] Lokale beheeraccount beschikbaar.
-- [ ] `Install-LeenlaptopSchoonmaak.bat` uitgevoerd als administrator.
-- [ ] Geplande taak `LeenlaptopSchoonmaak` gecontroleerd.
-- [ ] Snelkoppeling gecontroleerd.
-- [ ] Testrun uitgevoerd.
-- [ ] `laatste_status.txt` gecontroleerd.
-- [ ] Gebruiker geinformeerd over automatische opschoning.
+Deze acceptatietest is geen onderdeel van de lokale ontwikkeltests en is voor 1.7.0 nog niet uitgevoerd. Geef bij escalatie de versie, actie, exitcode en laatste rapport mee; deel de configuratie alleen wanneer de Wi-Fi-uitzonderingen en doelaccountinformatie nodig zijn.
