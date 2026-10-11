@@ -1,6 +1,6 @@
 #requires -Version 5.1
 Set-StrictMode -Version 2.0
-$script:UtilityVersion = '1.7.3'
+$script:UtilityVersion = '1.7.4'
 $script:Deadline = $null
 $script:TaskName = 'LeenlaptopSchoonmaak'
 $script:PackageFiles = @('LeenlaptopSchoonmaak.ps1', 'LeenlaptopSchoonmaak.psm1', 'WlanProfiles.cs')
@@ -485,6 +485,77 @@ function Remove-UtilityFolderItems {
     New-StepResult $Name $status -Removed $removed -Failed $failed
 }
 
+function Get-UtilityBrowserProcesses {
+    param([ValidateSet('chrome', 'msedge', 'firefox')][string]$Browser, [string]$Sid)
+    foreach ($record in Get-CimInstance Win32_Process -Filter "Name = '$Browser.exe'" -ErrorAction Stop) {
+        Assert-TimeRemaining
+        try {
+            $owner = Invoke-CimMethod -InputObject $record -MethodName GetOwnerSid -ErrorAction Stop
+            if ($owner.ReturnValue -ne 0) { throw 'Browserproces heeft geen controleerbare eigenaar.' }
+        } catch {
+            # Een proces kan tussen inventarisatie en de eigenaarcontrole normaal afsluiten.
+            $remaining = Get-CimInstance Win32_Process -Filter "ProcessId = $($record.ProcessId)" -ErrorAction Stop
+            if (-not $remaining -or $remaining.CreationDate -ne $record.CreationDate) { continue }
+            throw 'Browserproces heeft geen controleerbare eigenaar; opschoning gestopt.'
+        }
+        if ($owner.Sid -eq $Sid) { $record }
+    }
+}
+
+function Stop-UtilityBrowserProcess {
+    param($Record)
+    $managed = Get-Process -Id $Record.ProcessId -ErrorAction SilentlyContinue
+    if (-not $managed) { return }
+    try {
+        # De handle blijft aan dit proces gekoppeld, ook als de oorspronkelijke PID vervalt.
+        [void]$managed.Handle
+        if ([Math]::Abs(($managed.StartTime.ToUniversalTime() - $Record.CreationDate.ToUniversalTime()).TotalMilliseconds) -ge 1) { return }
+        Stop-Process -InputObject $managed -Force -ErrorAction Stop
+    } catch {
+        $remaining = Get-CimInstance Win32_Process -Filter "ProcessId = $($Record.ProcessId)" -ErrorAction Stop
+        if ($remaining -and $remaining.CreationDate -eq $Record.CreationDate) { throw 'Browserproces kon niet worden afgesloten; niets opgeschoond.' }
+    } finally { $managed.Dispose() }
+}
+
+function Stop-UtilityBrowserProcesses {
+    param([string]$Browser, [string]$Sid, [int]$MaxRetries)
+    for ($attempt = 0; $attempt -lt $MaxRetries; $attempt++) {
+        Assert-TimeRemaining
+        $records = @(Get-UtilityBrowserProcesses $Browser $Sid)
+        if ($records.Count -eq 0) {
+            Start-Sleep -Milliseconds 500
+            if (@(Get-UtilityBrowserProcesses $Browser $Sid).Count -eq 0) { return }
+            continue
+        }
+        foreach ($record in $records) {
+            Assert-TimeRemaining
+            # Controleer eigenaar en starttijd opnieuw: een PID kan inmiddels hergebruikt zijn.
+            $current = Get-CimInstance Win32_Process -Filter "ProcessId = $($record.ProcessId)" -ErrorAction Stop
+            if (-not $current -or $current.CreationDate -ne $record.CreationDate -or $current.Name -ne "$Browser.exe") { continue }
+            try {
+                $owner = Invoke-CimMethod -InputObject $current -MethodName GetOwnerSid -ErrorAction Stop
+                if ($owner.ReturnValue -ne 0) { throw 'Browserproces heeft geen controleerbare eigenaar.' }
+            } catch {
+                $remaining = Get-CimInstance Win32_Process -Filter "ProcessId = $($current.ProcessId)" -ErrorAction Stop
+                if (-not $remaining -or $remaining.CreationDate -ne $current.CreationDate) { continue }
+                throw 'Browserproces heeft geen controleerbare eigenaar; opschoning gestopt.'
+            }
+            if ($owner.Sid -ne $Sid) { continue }
+            Stop-UtilityBrowserProcess $current
+        }
+        # Wacht op het hele procesgezelschap, niet afzonderlijk op een verouderde PID-lijst.
+        for ($poll = 0; $poll -lt 5; $poll++) {
+            Assert-TimeRemaining
+            Start-Sleep -Milliseconds 500
+            if (@(Get-UtilityBrowserProcesses $Browser $Sid).Count -eq 0) { break }
+        }
+    }
+    Assert-TimeRemaining
+    if (@(Get-UtilityBrowserProcesses $Browser $Sid).Count) { throw 'Browser blijft actief of start opnieuw; niets opgeschoond. Sluit de browser en schakel zo nodig achtergrondmodus of Startup Boost uit.' }
+    Start-Sleep -Milliseconds 500
+    if (@(Get-UtilityBrowserProcesses $Browser $Sid).Count) { throw 'Browser is opnieuw gestart; niets opgeschoond.' }
+}
+
 function Clear-UtilityBrowser {
     param([string]$Browser, [int]$MaxRetries)
     $currentSid = Get-CurrentUserSid
@@ -493,31 +564,32 @@ function Clear-UtilityBrowser {
         'chrome' { Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data' }
         'firefox' { Join-Path $env:APPDATA 'Mozilla\Firefox' }
     }
-    Assert-UserDataPath $root
-    # Beperk procesbeheer tot het doelaccount; andere accounts blijven ongemoeid.
-    foreach ($process in Get-CimInstance Win32_Process -Filter "Name = '$Browser.exe'" -ErrorAction Stop) {
-        Assert-TimeRemaining
-        $owner = Invoke-CimMethod -InputObject $process -MethodName GetOwnerSid -ErrorAction Stop
-        if ($owner.ReturnValue -ne 0) { throw 'Browserproces heeft geen controleerbare eigenaar.' }
-        if ($owner.Sid -ne $currentSid) { continue }
-        Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop
-        for ($attempt = 0; $attempt -lt $MaxRetries; $attempt++) {
-            Assert-TimeRemaining
-            if (-not (Get-Process -Id $process.ProcessId -ErrorAction SilentlyContinue)) { break }
-            Start-Sleep -Milliseconds 300
+    $roots = @($root)
+    if ($Browser -eq 'firefox') { $roots += Join-Path $env:LOCALAPPDATA 'Mozilla\Firefox' }
+    foreach ($path in $roots) { Assert-UserDataPath $path }
+    $removed = 0
+    for ($attempt = 0; $attempt -lt $MaxRetries; $attempt++) {
+        try { Stop-UtilityBrowserProcesses $Browser $currentSid $MaxRetries }
+        catch {
+            if ($removed -gt 0) {
+                return (New-StepResult $Browser 'Partial' -Removed $removed -Failed 1 -Detail 'Browser kon na gedeeltelijke opschoning niet worden afgesloten; sluit de browser en probeer opnieuw.')
+            }
+            throw
         }
-        if (Get-Process -Id $process.ProcessId -ErrorAction SilentlyContinue) { throw 'Browser kon niet worden afgesloten.' }
+        $steps = @($roots | ForEach-Object { Remove-UtilityFolderItems -Path $_ -Name $Browser })
+        $failed = 0
+        foreach ($step in $steps) { $removed += $step.Removed; $failed += $step.Failed }
+        $status = if (@($steps | Where-Object Status -eq 'Failed').Count) { 'Failed' } elseif ($failed) { 'Partial' } else { 'Success' }
+        $result = New-StepResult $Browser $status -Removed $removed -Failed $failed
+        if (@(Get-UtilityBrowserProcesses $Browser $currentSid).Count) {
+            $result.Status = 'Partial'; $result.Failed++
+            $result.Detail = 'Browser is tijdens opschoning opnieuw gestart; sluit de browser en probeer opnieuw.'
+            return $result
+        }
+        if ($status -eq 'Success') { return $result }
+        if ($attempt + 1 -lt $MaxRetries) { Assert-TimeRemaining; Start-Sleep -Milliseconds 500 }
     }
-    # Wis de inhoud van de volledige lokale browseropslag, inclusief aangepaste profielen.
-    $result = Remove-UtilityFolderItems -Path $root -Name $Browser
-    if ($Browser -eq 'firefox') {
-        $cachePath = Join-Path $env:LOCALAPPDATA 'Mozilla\Firefox'
-        Assert-UserDataPath $cachePath
-        $cache = Remove-UtilityFolderItems -Path $cachePath -Name 'firefox-cache'
-        $result.Removed += $cache.Removed; $result.Failed += $cache.Failed
-        if ($cache.Status -eq 'Failed') { $result.Status = 'Failed' }
-        elseif ($result.Failed) { $result.Status = 'Partial' }
-    }
+    $result.Detail = 'Browseropslag kon niet volledig worden verwijderd; controleer vergrendelde bestanden en achtergrondprocessen.'
     return $result
 }
 

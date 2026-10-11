@@ -1,6 +1,16 @@
 Import-Module (Join-Path $PSScriptRoot '..\LeenlaptopSchoonmaak.psm1') -Force
 
 InModuleScope LeenlaptopSchoonmaak {
+    function New-TestBrowserProcess {
+        param([int]$Id, [string]$Sid, [DateTime]$Created = [DateTime]::UtcNow)
+        $record = New-Object Microsoft.Management.Infrastructure.CimInstance('Win32_Process')
+        foreach ($pair in @{
+            ProcessId = [uint32]$Id; Name = 'chrome.exe'; CreationDate = $Created; OwnerSid = $Sid
+        }.GetEnumerator()) {
+            $record.CimInstanceProperties.Add([Microsoft.Management.Infrastructure.CimProperty]::Create($pair.Key, $pair.Value, [Microsoft.Management.Infrastructure.CimFlags]::None))
+        }
+        $record
+    }
     Describe 'Administratorrechten voor installatie' {
         BeforeEach {
             Mock Test-Administrator { $false }
@@ -669,6 +679,96 @@ throw 'Mag nooit worden uitgevoerd'
         }
     }
 
+    Describe 'Draaiende browsers met uitsluitend gesimuleerde processen' {
+        BeforeEach {
+            $script:Deadline = $null
+            $script:browserRecords = @{}
+            $script:browserSid = 'S-1-5-21-1-2-3-1001'
+            $script:stopMode = 'normal'
+            foreach ($id in @(101, 102)) {
+                $script:browserRecords[$id] = New-TestBrowserProcess $id $script:browserSid ([DateTime]::UtcNow.AddMinutes(-5))
+            }
+            Mock Start-Sleep {}
+            Mock Get-CimInstance {
+                if ($Filter -match '^ProcessId = (\d+)$') { return $script:browserRecords[[int]$Matches[1]] }
+                @($script:browserRecords.Values)
+            }
+            Mock Invoke-CimMethod { @{ ReturnValue = 0; Sid = $InputObject.OwnerSid } }
+            Mock Stop-Process { throw 'Geen echte processen stoppen' }
+            Mock Stop-UtilityBrowserProcess {
+                if ($script:stopMode -eq 'denied') { throw 'Access denied' }
+                $script:browserRecords.Remove([int]$Record.ProcessId)
+                if ($script:stopMode -eq 'parent-exit') { $script:browserRecords.Remove(102) }
+                if ($script:stopMode -eq 'respawn' -and $Record.ProcessId -eq 101) {
+                    $script:browserRecords[104] = New-TestBrowserProcess 104 $script:browserSid
+                }
+            }
+        }
+        It 'blijft werken wanneer het hoofdproces zijn kindprocessen tegelijk afsluit' {
+            $script:stopMode = 'parent-exit'
+            { Stop-UtilityBrowserProcesses chrome $script:browserSid 3 } | Should Not Throw
+            Assert-MockCalled Stop-UtilityBrowserProcess -Times 1 -Exactly -Scope It
+        }
+        It 'controleert opnieuw dat alle browserprocessen verdwenen zijn' {
+            { Stop-UtilityBrowserProcesses chrome $script:browserSid 3 } | Should Not Throw
+            Assert-MockCalled Get-CimInstance -Times 4 -Exactly -Scope It -ParameterFilter { $Filter -eq "Name = 'chrome.exe'" }
+        }
+        It 'inventariseert opnieuw en stopt nieuw verschenen achtergrondprocessen' {
+            $script:stopMode = 'respawn'
+            { Stop-UtilityBrowserProcesses chrome $script:browserSid 3 } | Should Not Throw
+            Assert-MockCalled Stop-UtilityBrowserProcess -Times 1 -Exactly -Scope It -ParameterFilter { $Record.ProcessId -eq 104 }
+        }
+        It 'laat processen van andere gebruikers ongemoeid' {
+            $script:browserRecords[102].OwnerSid = 'S-1-5-21-1-2-3-1002'
+            { Stop-UtilityBrowserProcesses chrome $script:browserSid 3 } | Should Not Throw
+            Assert-MockCalled Stop-UtilityBrowserProcess -Times 0 -Exactly -Scope It -ParameterFilter { $Record.ProcessId -eq 102 }
+        }
+        It 'weigert een niet controleerbare eigenaar wanneer het proces nog bestaat' {
+            Mock Invoke-CimMethod { @{ ReturnValue = 2; Sid = '' } }
+            { Stop-UtilityBrowserProcesses chrome $script:browserSid 3 } | Should Throw
+            Assert-MockCalled Stop-Process -Times 0 -Exactly -Scope It
+        }
+        It 'stopt niet wanneer een PID inmiddels bij een ander proces hoort' {
+            Mock Get-CimInstance {
+                $script:browserRecords[101] = New-TestBrowserProcess 101 'S-1-5-21-1-2-3-1002'
+                $script:browserRecords[101]
+            } -ParameterFilter { $Filter -eq 'ProcessId = 101' }
+            { Stop-UtilityBrowserProcesses chrome $script:browserSid 3 } | Should Not Throw
+            Assert-MockCalled Stop-UtilityBrowserProcess -Times 0 -Exactly -Scope It -ParameterFilter { $Record.ProcessId -eq 101 }
+        }
+        It 'stopt de stap bij blijvende toegangsweigering' {
+            $script:stopMode = 'denied'
+            { Stop-UtilityBrowserProcesses chrome $script:browserSid 3 } | Should Throw
+        }
+        It 'respecteert de globale tijdslimiet voordat een proces wordt gestopt' {
+            $script:Deadline = [DateTime]::UtcNow.AddSeconds(-1)
+            { Stop-UtilityBrowserProcesses chrome $script:browserSid 3 } | Should Throw
+            Assert-MockCalled Stop-Process -Times 0 -Exactly -Scope It
+        }
+    }
+
+    Describe 'Procesidentiteit zonder processen te stoppen' {
+        BeforeEach {
+            $script:testProcess = [Diagnostics.Process]::GetCurrentProcess()
+            $script:testStart = $script:testProcess.StartTime
+            Mock Get-Process { $script:testProcess }
+            Mock Stop-Process {}
+            Mock Get-CimInstance { $null }
+        }
+        It 'gebruikt het gecontroleerde procesobject in plaats van alleen een PID' {
+            Stop-UtilityBrowserProcess ([pscustomobject]@{ ProcessId = 50000; CreationDate = $script:testStart })
+            Assert-MockCalled Stop-Process -Times 1 -Exactly -Scope It -ParameterFilter { $InputObject[0] -is [Diagnostics.Process] -and $Force }
+        }
+        It 'behandelt een inmiddels verdwenen proces niet als een fout' {
+            Mock Stop-Process { throw 'Process already exited' }
+            { Stop-UtilityBrowserProcess ([pscustomobject]@{ ProcessId = 50000; CreationDate = $script:testStart }) } | Should Not Throw
+        }
+        It 'stopt niet wanneer de beheerde starttijd niet overeenkomt' {
+            Stop-UtilityBrowserProcess ([pscustomobject]@{ ProcessId = 50000; CreationDate = $script:testStart.AddMinutes(-1) })
+            Assert-MockCalled Stop-Process -Times 0 -Exactly -Scope It
+        }
+    }
+
     Describe 'Browseropslag met uitsluitend testprofielen' {
         BeforeEach {
             $script:Deadline = $null
@@ -683,6 +783,7 @@ throw 'Mag nooit worden uitgevoerd'
             Mock Get-CurrentUserSid { 'S-1-5-21-1-2-3-1001' }
             Mock Get-CimInstance { @() }
             Mock Stop-Process { throw 'Geen echte processen stoppen' }
+            Mock Start-Sleep {}
         }
         AfterEach {
             foreach ($name in $savedEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name], 'Process') }
@@ -715,6 +816,49 @@ throw 'Mag nooit worden uitgevoerd'
             $result = Clear-UtilityBrowser msedge 3
             $result.Status | Should Be 'Success'
             @(Get-ChildItem $root -Force).Count | Should Be 0
+        }
+        It 'verwijdert niets wanneer de browser niet kan worden afgesloten' {
+            Mock Stop-UtilityBrowserProcesses { throw 'Browser blijft draaien' }
+            Mock Remove-UtilityFolderItems { throw 'Mag niet worden aangeroepen' }
+            { Clear-UtilityBrowser chrome 3 } | Should Throw
+            Assert-MockCalled Remove-UtilityFolderItems -Times 0 -Exactly -Scope It
+        }
+        It 'bewaart het aantal verwijderde bestanden als afsluiten bij een herpoging mislukt' {
+            $script:stopPass = 0
+            Mock Stop-UtilityBrowserProcesses { $script:stopPass++; if ($script:stopPass -gt 1) { throw 'Browser start opnieuw' } }
+            Mock Remove-UtilityFolderItems { New-StepResult 'chrome' 'Partial' -Removed 2 -Failed 1 }
+            $result = Clear-UtilityBrowser chrome 3
+            $result.Status | Should Be 'Partial'
+            $result.Removed | Should Be 2
+        }
+        It 'probeert vergrendelde bestanden opnieuw zonder eerdere fouten dubbel te tellen' {
+            Mock Stop-UtilityBrowserProcesses {}
+            $script:deletePass = 0
+            Mock Remove-UtilityFolderItems {
+                $script:deletePass++
+                if ($script:deletePass -eq 1) { return (New-StepResult 'chrome' 'Partial' -Removed 2 -Failed 1) }
+                New-StepResult 'chrome' 'Success' -Removed 1
+            }
+            $result = Clear-UtilityBrowser chrome 3
+            $result.Status | Should Be 'Success'
+            $result.Removed | Should Be 3
+            $result.Failed | Should Be 0
+        }
+        It 'blijft een niet verwijderbaar bestand na de herpogingen als gedeeltelijk resultaat melden' {
+            Mock Stop-UtilityBrowserProcesses {}
+            Mock Remove-UtilityFolderItems { New-StepResult 'chrome' 'Partial' -Failed 1 }
+            $result = Clear-UtilityBrowser chrome 3
+            $result.Status | Should Be 'Partial'
+            $result.Failed | Should Be 1
+            Assert-MockCalled Remove-UtilityFolderItems -Times 3 -Exactly -Scope It
+        }
+        It 'rapporteert opnieuw starten tijdens opschoning niet als succes' {
+            Mock Stop-UtilityBrowserProcesses {}
+            Mock Remove-UtilityFolderItems { New-StepResult 'chrome' 'Success' -Removed 2 }
+            Mock Get-UtilityBrowserProcesses { [pscustomobject]@{ ProcessId = 999 } }
+            $result = Clear-UtilityBrowser chrome 3
+            $result.Status | Should Be 'Partial'
+            $result.Failed | Should Be 1
         }
     }
 

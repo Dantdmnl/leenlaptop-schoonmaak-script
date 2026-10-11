@@ -1,6 +1,6 @@
 # Privacy en gegevensbeheer
 
-Technische beschrijving voor Leenlaptop Schoonmaak 1.7.3, 11 oktober 2026. Organisaties bepalen zelf welke gegevens mogen worden verwijderd, welke bewaartermijnen passend zijn en wie het programma mag gebruiken.
+Technische beschrijving voor Leenlaptop Schoonmaak 1.7.4 (in voorbereiding). Organisaties bepalen zelf welke gegevens mogen worden verwijderd, welke bewaartermijnen passend zijn en wie het programma mag gebruiken.
 
 ## Welke gegevens worden verwijderd?
 

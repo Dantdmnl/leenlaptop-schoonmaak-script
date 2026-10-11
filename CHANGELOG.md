@@ -2,6 +2,14 @@
 
 Alle relevante wijzigingen aan het leenlaptop-schoonmaakscript worden in dit bestand vastgelegd.
 
+## [1.7.4] - In voorbereiding
+
+- Browserprocessen worden opnieuw geinventariseerd tijdens afsluiten. Verdwenen kindprocessen breken de opschoning niet meer onnodig af.
+- Eigenaar, starttijd en proceshandle worden gecontroleerd voor stoppen; andere gebruikers blijven buiten de processtopactie.
+- Wacht op een korte periode zonder browserprocessen voordat browseropslag wordt verwijderd. Blijvend actieve processen stoppen de browserstap voor verwijdering.
+- Vergrendelde browseropslag krijgt herpogingen. Opnieuw starten en gedeeltelijke verwijdering worden niet als volledig succes gemeld; verwijderingstellingen blijven behouden.
+- Zestien tests toegevoegd; 90 tests in totaal. Onderzoek naar browserprocessen, Edge Startup Boost, Firefox-profielvergrendeling en synchronisatie vastgelegd.
+
 ## [1.7.3] - 2026-10-11
 
 - Voorbeeldconfiguratie is geen verplicht programmabestand meer. Installatie werkt ook wanneer `config.example.json` is hernoemd naar `config.json`; de controle van programmabestanden blijft behouden.

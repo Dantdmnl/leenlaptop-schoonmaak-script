@@ -1,6 +1,6 @@
 # Servicedeskhandleiding
 
-Leenlaptop Schoonmaak 1.7.3, 11 oktober 2026.
+Leenlaptop Schoonmaak 1.7.4, in voorbereiding.
 
 ## Installeren
 
@@ -52,6 +52,8 @@ Wijzigingen aan opschooninstellingen gelden bij de volgende uitvoering. Instelli
 
 | Probleem | Actie |
 | --- | --- |
+| Browser blijft actief of start opnieuw | Sluit alle vensters van het doelaccount en controleer achtergrondmodus of Edge Startup Boost. Houd browsers gesloten tijdens opschoning. De utility past browserbeleid niet zelf aan |
+| Browsergegevens keren na opnieuw aanmelden terug | Controleer browseraanmelding en synchronisatie; lokale opschoning verwijdert geen gegevens uit externe accounts |
 | `Releasebestand ontbreekt: config.example.json` in 1.7.2 | Bewaar uw aangepaste `config.json` en maak daarnaast een kopie met de naam `config.example.json`. Vanaf 1.7.3 is dit voorbeeldbestand optioneel |
 | UAC geannuleerd of administratorrechten ontbreken | Start de installer opnieuw en bevestig UAC. Voor rechtstreeks gebruik van `-Install` opent u PowerShell als administrator |
 | Ander account dan doelaccount | Meld het doelaccount aan; gebruik een beheeraccount alleen voor installatie |
@@ -75,6 +77,7 @@ Gebruik een Windows-VM of testlaptop met gegevens die verwijderd mogen worden.
 - Annuleer UAC en controleer dat geen accountkeuze of installatie begint. Start daarna opnieuw en bevestig het verzoek, ook met een apart beheeraccount.
 - Controleer dat installatie, starten zonder argumenten en `-WhatIf` geen browsergegevens of testbestanden verwijderen.
 - Maak meerdere browserprofielen met testgeschiedenis, opgeslagen aanmeldingen en bladwijzers. Controleer de volledige lokale browseropslag na opschoning.
+- Herhaal met draaiende browsers, meerdere tabbladen en achtergrondprocessen. Controleer dat alleen processen van het doelaccount worden gestopt en dat vergrendelde bestanden geen vals succes opleveren. Test ook een browser die opnieuw start en een profiel dat gegevens uit een extern account synchroniseert.
 - Plaats oude en recente bestanden in Downloads, inclusief een oude map met een recent bestand. Alleen de oude bestanden mogen verdwijnen.
 - Controleer dat een standaardaccount gedeeltelijk resultaat krijgt voor ingeschakelde beheeracties.
 - Controleer op een geschikte testconfiguratie Wi-Fi-uitzonderingen en firewallreset.

@@ -1,6 +1,6 @@
 # Leenlaptop Schoonmaak
 
-Hulpprogramma voor Windows waarmee u een leenaccount na gebruik lokaal opschoont. Versie **1.7.3**, uitgebracht op **11 oktober 2026**. Vereist Windows 10/11 en Windows PowerShell 5.1.
+Hulpprogramma voor Windows waarmee u een leenaccount na gebruik lokaal opschoont. Versie **1.7.4** is in voorbereiding. Vereist Windows 10/11 en Windows PowerShell 5.1.
 
 ## Gebruik
 
@@ -41,6 +41,10 @@ Log vervolgens in als het doelaccount. Handmatig opschonen kan via **Leenlaptop 
 Opschoning verwijdert gegevens definitief. Browseropslag wordt volledig leeggemaakt, inclusief cookies, opgeslagen aanmeldingen, instellingen, extensies en lokale bladwijzers. Maak noodzakelijke gegevens vooraf elders beschikbaar. Dit is geen schijfwisprogramma of vervanging voor een herinstallatie.
 
 Browseropschoning omvat de standaardopslaglocaties van Edge, Chrome en Firefox, inclusief de profielen binnen die locaties. Draagbare browsers en profielen waarvoor een andere opslaglocatie is ingesteld, vallen hierbuiten.
+
+Bij browseropschoning worden draaiende processen van de gekozen browsers onder het doelaccount geforceerd afgesloten. Sla werk vooraf op: open tabbladen en niet opgeslagen invoer kunnen verloren gaan. De utility inventariseert processen opnieuw, controleert eigenaar en starttijd en wacht op een korte periode zonder browserprocessen voordat bestanden worden verwijderd. Vergrendelde bestanden worden opnieuw geprobeerd, binnen `MaxRetries` en de algemene tijdslimiet. Als een browser actief blijft, begint de verwijdering niet; opnieuw starten tijdens opschoning wordt als gedeeltelijk resultaat gemeld.
+
+Houd browsers gesloten tijdens opschoning. Edge Startup Boost, achtergrondmodus of andere software kunnen processen opnieuw starten. De utility wijzigt deze instellingen of organisatiebeleid niet automatisch. Gegevens in een Google-, Microsoft- of Mozilla-account worden niet verwijderd en kunnen na opnieuw aanmelden of synchroniseren terugkomen. Beoordeel dat afzonderlijk bij heruitgifte.
 
 ## Configuratie
 
@@ -129,6 +133,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Invoke-Tests.ps1
 .\tools\New-ReleaseArchive.ps1
 ```
 
-De 74 Pester-tests gebruiken uitsluitend tijdelijke bestanden en gesimuleerde systeemacties, inclusief browserprofielen met testgegevens, het aanvragen van administratorrechten, configuratiekeuze, migratie en het installatieoverzicht. De automatische Windows-controles omvatten syntaxcontrole, geselecteerde ScriptAnalyzer-regels, compilatie van de C#-helper en deze tests. Daarnaast controleert een integratietest op een tijdelijke Windows-machine van GitHub de profielinventarisatie, configuratiebronnen, installatie zonder voorbeeldbestand, taakregistratie, toegangsrechten, snelkoppeling, opdrachtregel, rapportage en updates. Alle opschoonfuncties staan tijdens die integratietest uit. De test weigert uitvoering buiten GitHub Actions.
+De 90 Pester-tests gebruiken uitsluitend tijdelijke bestanden en gesimuleerde systeemacties, inclusief browserprofielen met testgegevens, verdwenen en opnieuw gestarte browserprocessen, procesidentiteit, vergrendelde bestanden, het aanvragen van administratorrechten, configuratiekeuze, migratie en het installatieoverzicht. De automatische Windows-controles omvatten syntaxcontrole, geselecteerde ScriptAnalyzer-regels, compilatie van de C#-helper en deze tests. Daarnaast controleert een integratietest op een tijdelijke Windows-machine van GitHub de profielinventarisatie, configuratiebronnen, installatie zonder voorbeeldbestand, taakregistratie, toegangsrechten, snelkoppeling, opdrachtregel, rapportage en updates. Alle opschoonfuncties staan tijdens die integratietest uit. De test weigert uitvoering buiten GitHub Actions.
 
 Het afsluiten van echte browsers, verwijderen van Wi-Fi-profielen en herstellen van de firewall zijn niet getest. Controleer deze functies en uw beheerconfiguratie met een tijdelijk testaccount voordat u het programma breed inzet. Op de ontwikkelcomputer worden geen echte gebruikersgegevens opgeschoond. Zie [VALIDATION.md](VALIDATION.md) voor de uitgevoerde controles en bronnen, [SERVICEDESK.md](SERVICEDESK.md) voor de acceptatietest en [AVG-COMPLIANCE.md](AVG-COMPLIANCE.md) voor de technische privacymaatregelen. De release bevat het volledige ZIP-archief en `SHA256SUMS.txt`.
