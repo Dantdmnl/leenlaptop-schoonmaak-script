@@ -2,7 +2,7 @@
 
 Alle relevante wijzigingen aan het leenlaptop-schoonmaakscript worden in dit bestand vastgelegd.
 
-## [1.7.4] - In voorbereiding
+## [1.7.4] - 2026-10-11
 
 - Browserprocessen worden opnieuw geinventariseerd tijdens afsluiten. Verdwenen kindprocessen breken de opschoning niet meer onnodig af.
 - Eigenaar, starttijd en proceshandle worden gecontroleerd voor stoppen; andere gebruikers blijven buiten de processtopactie.
