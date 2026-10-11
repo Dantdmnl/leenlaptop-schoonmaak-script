@@ -1,8 +1,58 @@
 Import-Module (Join-Path $PSScriptRoot '..\LeenlaptopSchoonmaak.psm1') -Force
 
 InModuleScope LeenlaptopSchoonmaak {
+    Describe 'Administratorrechten voor installatie' {
+        BeforeEach {
+            Mock Test-Administrator { $false }
+            Mock Write-Host {}
+            Mock Select-TargetUser { throw 'Accountkeuze mag nog niet beginnen' }
+            Mock Invoke-LeenlaptopUtility { throw 'Installatie mag nog niet beginnen' }
+        }
+        It 'vraagt vooraf om UAC en geeft de exitcode van het beheervenster door' {
+            Mock Start-Process { [pscustomobject]@{ ExitCode = 2 } }
+            (Invoke-LeenlaptopInstaller -SourcePath $TestDrive) | Should Be 2
+            Assert-MockCalled Start-Process -Times 1 -Exactly -Scope It -ParameterFilter {
+                $Verb -eq 'RunAs' -and $Wait -and $PassThru -and $WindowStyle -eq 'Normal' -and $ArgumentList -match '-EncodedCommand '
+            }
+            Assert-MockCalled Select-TargetUser -Times 0 -Exactly -Scope It
+            Assert-MockCalled Invoke-LeenlaptopUtility -Times 0 -Exactly -Scope It
+        }
+        It 'geeft een duidelijke fout als UAC wordt geannuleerd' {
+            Mock Start-Process { throw 'The operation was canceled by the user' }
+            { Invoke-LeenlaptopInstaller -SourcePath $TestDrive } | Should Throw
+            Assert-MockCalled Invoke-LeenlaptopUtility -Times 0 -Exactly -Scope It
+        }
+        It 'voorkomt opnieuw opstarten wanneer rechten na UAC nog ontbreken' {
+            Mock Start-Process { throw 'Mag niet worden aangeroepen' }
+            { Invoke-LeenlaptopInstaller -SourcePath $TestDrive -Elevated } | Should Throw
+            Assert-MockCalled Start-Process -Times 0 -Exactly -Scope It
+        }
+        It 'houdt spaties en apostrofs in het bronpad letterlijk' {
+            Mock Start-Process {
+                $encoded = ($ArgumentList -split ' ')[-1]
+                $script:launchCommand = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($encoded))
+                [pscustomobject]@{ ExitCode = 0 }
+            }
+            (Invoke-LeenlaptopInstaller -SourcePath "E:\Ruben's USB\release") | Should Be 0
+            $script:launchCommand.Contains("'E:\Ruben''s USB\release'") | Should Be $true
+            $tokens = $null; $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseInput($script:launchCommand, [ref]$tokens, [ref]$parseErrors)
+            $parseErrors.Count | Should Be 0
+        }
+        It 'vraagt niet opnieuw om UAC wanneer al als administrator gestart' {
+            Mock Test-Administrator { $true }
+            Mock Start-Process { throw 'Mag niet worden aangeroepen' }
+            Mock Out-Host {}
+            Mock Invoke-LeenlaptopUtility { [pscustomobject]@{ ExitCode = 0; Results = @(); Status = 'Cancelled' } }
+            (Invoke-LeenlaptopInstaller -SourcePath $TestDrive) | Should Be 0
+            Assert-MockCalled Start-Process -Times 0 -Exactly -Scope It
+            Assert-MockCalled Invoke-LeenlaptopUtility -Times 1 -Exactly -Scope It -ParameterFilter { $Action -eq 'Install' -and $Interactive -and $SourcePath -eq $TestDrive }
+        }
+    }
+
     Describe 'Interactieve accountkeuze' {
         BeforeEach {
+            Mock Test-Administrator { $true }
             Mock Get-AvailableTargetUsers {
                 [pscustomobject]@{ Sid = 'S-1-5-21-1-2-3-1001'; Account = 'LAPTOP\leenaccount'; ProfilePath = 'C:\Users\leenaccount' }
                 [pscustomobject]@{ Sid = 'S-1-5-21-1-2-3-1002'; Account = 'LAPTOP\beheer'; ProfilePath = 'C:\Users\beheer' }
@@ -11,6 +61,11 @@ InModuleScope LeenlaptopSchoonmaak {
             Mock Write-Host {}
             $script:answers = New-Object 'System.Collections.Generic.Queue[string]'
             Mock Read-Host { $script:answers.Dequeue() }
+        }
+        It 'weigert installatie zonder rechten voordat de accountkeuze begint' {
+            Mock Test-Administrator { $false }
+            { Invoke-LeenlaptopUtility -Action Install -Interactive -InstallPath $TestDrive } | Should Throw
+            Assert-MockCalled Read-Host -Times 0 -Exactly -Scope It
         }
         It 'sorteert accounts en resolveert de bevestigde keuze opnieuw via SID' {
             $script:answers.Enqueue('2'); $script:answers.Enqueue('j')

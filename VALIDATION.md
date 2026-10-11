@@ -5,16 +5,17 @@ Gecontroleerd op 11 oktober 2026.
 ## Geautomatiseerde controles
 
 - Syntaxcontrole voor PowerShell 5.1, geselecteerde ScriptAnalyzer-regels en compilatie van de C#-helper.
-- 44 Pester-tests met tijdelijke testbestanden en gesimuleerde systeemacties: accountkeuze, annuleren, profielinventarisatie, configuratie, migratie, herstel na mislukte updates, leeftijdsfilters, links, vergrendeling, status, bewaartermijnen en browseropslag met testprofielen.
+- 50 Pester-tests met tijdelijke testbestanden en gesimuleerde systeemacties: UAC-verzoek en annuleren, veilige doorgifte van het bronpad, accountkeuze, profielinventarisatie, configuratie, migratie, herstel na mislukte updates, leeftijdsfilters, links, vergrendeling, status, bewaartermijnen en browseropslag met testprofielen.
 - Native WLAN-structuurafmetingen en Unicode-marshaling zonder WLAN-functies aan te roepen.
 - Integratietest op een tijdelijke Windows-machine van GitHub: inventarisatie van echte gebruikersprofielen, installatie, geplande taak, taakrechten, NTFS-rechten, snelkoppeling, opdrachtregel, rapportage, configuratiebehoud bij updates en beheer van taaktriggers. Alle opschoonfuncties staan uit. De test weigert uitvoering buiten GitHub Actions.
 
-De integratietest controleert de ingestelde toegangsrechten. De test simuleert geen aanmelding als standaardgebruiker en geen fysieke USB-stick. De testmachine draait Windows Server, geen Windows 10/11. Installatie vanaf een USB-stick gebruikt hetzelfde kopieerproces; de fysieke controle staat in de acceptatietest.
+De integratietest controleert de ingestelde toegangsrechten. De test simuleert geen aanmelding als standaardgebruiker, interactief UAC-venster of fysieke USB-stick. UAC wordt uitsluitend met gesimuleerde procesaanroepen getest. De testmachine draait Windows Server, geen Windows 10/11. Installatie vanaf een USB-stick gebruikt hetzelfde kopieerproces; de fysieke controle staat in de acceptatietest.
 
 ## Onderzoeksbronnen
 
 | Onderdeel | Officiele bron | Controle |
 | --- | --- | --- |
+| Administratorrechten | [Microsoft: Start-Process](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/start-process?view=powershell-5.1) | `RunAs` opent UAC; `Wait` en `PassThru` geven het procesresultaat door. Bronpaden worden als letterlijke waarden doorgegeven |
 | Accountkeuze | [Microsoft: Win32_UserProfile](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/legacy/ee886409(v=vs.85)) | SID, profielpad en onderscheid tussen gebruikers- en systeemprofielen; de gekozen SID wordt voor installatie opnieuw gecontroleerd |
 | Taakcontext en rechten | [Microsoft: Security Contexts for Tasks](https://learn.microsoft.com/en-us/windows/win32/taskschd/security-contexts-for-running-tasks) | Principal, interactieve context, hoogste bevoegdheden en afzonderlijke startrechten |
 | Taak-DACL | [Microsoft: SetSecurityDescriptor](https://learn.microsoft.com/en-us/windows/win32/taskschd/registeredtask-setsecuritydescriptor) | Doelaccount mag lezen/starten; SYSTEM en beheerders houden volledige toegang |

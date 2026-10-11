@@ -182,6 +182,40 @@ function Select-TargetUser {
     }
 }
 
+function Invoke-LeenlaptopInstaller {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$SourcePath, [switch]$Elevated)
+    if (-not (Test-Administrator)) {
+        if ($Elevated) { throw 'Administratorrechten ontbreken. Start de installer als administrator.' }
+        Write-Host 'Voor installatie zijn administratorrechten nodig. Bevestig het Windows-beveiligingsvenster.'
+        # EncodedCommand voorkomt dat bijzondere tekens in het USB- of uitpakpad als code worden gelezen.
+        $literalPath = $SourcePath.Replace("'", "''")
+        $command = @"
+`$ErrorActionPreference = 'Stop'
+`$code = 1
+try {
+    Import-Module (Join-Path '$literalPath' 'LeenlaptopSchoonmaak.psm1') -Force
+    `$code = Invoke-LeenlaptopInstaller -SourcePath '$literalPath' -Elevated
+} catch { Write-Host ('Installatie gestopt: ' + `$_.Exception.Message) -ForegroundColor Red }
+[void](Read-Host 'Druk op Enter om dit venster te sluiten')
+exit `$code
+"@
+        $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+        try {
+            $process = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
+                -ArgumentList "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded" `
+                -Verb RunAs -WindowStyle Normal -Wait -PassThru -ErrorAction Stop
+            return $process.ExitCode
+        } catch {
+            throw 'Installatie niet gestart: het verzoek om administratorrechten is geannuleerd of mislukt. Start de installer opnieuw en bevestig UAC.'
+        }
+    }
+    $result = Invoke-LeenlaptopUtility -Action Install -Interactive -SourcePath $SourcePath -InstallPath "$env:ProgramData\LeenlaptopSchoonmaak"
+    $result | Format-List Version, Action, Status, ConfigSource | Out-Host
+    $result.Results | Format-Table Name, Status, Removed, Failed, Detail -Wrap | Out-Host
+    return $result.ExitCode
+}
+
 function New-StepResult {
     param([string]$Name, [ValidateSet('Success', 'Partial', 'Failed', 'Skipped', 'Planned')][string]$Status,
         [int]$Removed = 0, [int]$Failed = 0, [string]$Detail = '')
@@ -795,6 +829,9 @@ function Invoke-LeenlaptopUtility {
     $script:Deadline = $null
     $user = $null
     $legacyProfilePath = ''
+    if ($Action -eq 'Install' -and -not $WhatIfPreference -and -not (Test-Administrator)) {
+        throw 'Installatie vereist administratorrechten. Start Install-LeenlaptopSchoonmaak.bat voor het Windows-beveiligingsverzoek, of open PowerShell als administrator.'
+    }
     if ($Interactive) {
         if ($Action -ne 'Install' -or $TargetUser) { throw '-Interactive vereist -Install zonder -TargetUser.' }
         $user = Select-TargetUser
@@ -896,4 +933,4 @@ function Invoke-LeenlaptopUtility {
     }
 }
 
-Export-ModuleMember -Function Invoke-LeenlaptopUtility
+Export-ModuleMember -Function Invoke-LeenlaptopUtility, Invoke-LeenlaptopInstaller

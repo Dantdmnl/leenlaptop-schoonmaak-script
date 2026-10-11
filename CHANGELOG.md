@@ -9,7 +9,8 @@ Alle relevante wijzigingen aan het leenlaptop-schoonmaakscript worden in dit bes
 - De batchinstaller gebruikt de accountkeuzelijst. De gekozen profielmap wordt ook gebruikt bij migratie van oude instellingen.
 - Handleidingen herschreven in duidelijker Nederlands, met een installatieprocedure voor USB-sticks en uitleg over de lokale installatie.
 - Privacybeschrijving aangepast aan de profielinventarisatie tijdens installatie.
-- Tien tests toegevoegd voor accountkeuze, invoercontrole, annuleren, migratie en profielinventarisatie; 44 tests in totaal.
+- De batchinstaller vraagt vooraf om administratorrechten via UAC; annuleren stopt de installatie. Rechtstreeks gebruik van `-Install` controleert de rechten voor de accountkeuze.
+- Zestien tests toegevoegd voor UAC, bronpaden, accountkeuze, invoercontrole, annuleren, migratie en profielinventarisatie; 50 tests in totaal.
 - Profielinventarisatie toegevoegd aan de integratietest op de tijdelijke Windows-machine van GitHub.
 
 ## [1.7.0] - 2026-10-10

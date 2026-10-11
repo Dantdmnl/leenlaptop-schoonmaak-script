@@ -6,7 +6,7 @@ Leenlaptop Schoonmaak 1.7.1, 11 oktober 2026.
 
 1. Pak het volledige ZIP-archief uit in een map op de laptop of op een USB-stick. Laat alle bestanden bij elkaar staan.
 2. Zorg dat het leenaccount al een gebruikersprofiel heeft. Meld u zo nodig eerst eenmaal aan met dit account.
-3. Start `Install-LeenlaptopSchoonmaak.bat` via **Als administrator uitvoeren**. Kies het leenaccount uit de genummerde lijst en controleer de accountnaam en profielmap. Bevestig met `J`, kies opnieuw met `N` of annuleer met `0`.
+3. Dubbelklik op `Install-LeenlaptopSchoonmaak.bat`. Bevestig eerst het Windows-beveiligingsvenster (UAC), eventueel met een apart beheeraccount. Kies daarna het leenaccount uit de genummerde lijst en controleer de accountnaam en profielmap. Bevestig met `J`, kies opnieuw met `N` of annuleer met `0`.
 4. Controleer dat de status `Success` is en de exitcode `0`. Annuleren geeft ook exitcode `0`, maar de status `Cancelled`; dan is niets geplaatst.
 5. Verwijder de USB-stick zodra de installatie is geslaagd. Het programma staat nu lokaal in `C:\ProgramData\LeenlaptopSchoonmaak`; de taak en snelkoppeling hebben de stick niet meer nodig.
 6. Meld u aan met het doelaccount. Controleer eerst met `-Check` en bekijk daarna de geplande opschoning met `-Cleanup -WhatIf`.
@@ -50,6 +50,7 @@ Wijzigingen aan opschooninstellingen gelden bij de volgende uitvoering. Instelli
 
 | Probleem | Actie |
 | --- | --- |
+| UAC geannuleerd of administratorrechten ontbreken | Start de installer opnieuw en bevestig UAC. Voor rechtstreeks gebruik van `-Install` opent u PowerShell als administrator |
 | Ander account dan doelaccount | Meld het doelaccount aan; gebruik een beheeraccount alleen voor installatie |
 | Leenaccount ontbreekt in de lijst | Meld u eerst eenmaal aan met dit account; controleer of het account nog bestaat en het profiel lokaal beschikbaar is |
 | Gedeeltelijk resultaat | Controleer resultaten per stap, benodigde rechten, vergrendelde bestanden en overgeslagen links |
@@ -68,6 +69,7 @@ Gebruik een Windows-VM of testlaptop met gegevens die verwijderd mogen worden.
 
 - Installeer vanaf een USB-stick met een apart beheeraccount voor het testaccount. Controleer de accountkeuze, taakcontext, toegangsrechten en snelkoppeling. Verwijder de stick en controleer de lokale installatie.
 - Annuleer de accountkeuze en controleer dat de installatie ongewijzigd blijft.
+- Annuleer UAC en controleer dat geen accountkeuze of installatie begint. Start daarna opnieuw en bevestig het verzoek, ook met een apart beheeraccount.
 - Controleer dat installatie, starten zonder argumenten en `-WhatIf` geen browsergegevens of testbestanden verwijderen.
 - Maak meerdere browserprofielen met testgeschiedenis, opgeslagen aanmeldingen en bladwijzers. Controleer de volledige lokale browseropslag na opschoning.
 - Plaats oude en recente bestanden in Downloads, inclusief een oude map met een recent bestand. Alleen de oude bestanden mogen verdwijnen.
