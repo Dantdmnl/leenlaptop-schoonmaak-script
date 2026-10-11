@@ -1,6 +1,6 @@
 # Servicedeskhandleiding
 
-Leenlaptop Schoonmaak 1.7.2, in voorbereiding.
+Leenlaptop Schoonmaak 1.7.2, 11 oktober 2026.
 
 ## Installeren
 

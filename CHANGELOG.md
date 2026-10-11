@@ -2,7 +2,9 @@
 
 Alle relevante wijzigingen aan het leenlaptop-schoonmaakscript worden in dit bestand vastgelegd.
 
-## [1.7.2] - In voorbereiding
+## [1.7.2] - 2026-10-11
+
+Deze release volgt op 1.7.0 en bevat ook de verbeteringen uit de ingetrokken versie 1.7.1.
 
 - `EnableStartupTask` hernoemd naar `EnableScheduledTask`. Oude JSON-configuraties en scripts blijven ondersteund; herinstallatie slaat alleen de nieuwe sleutel op.
 - Automatisch opschonen bij aanmelden zonder geplande taak wordt geweigerd, net als tegenstrijdige oude en nieuwe taaksleutels.
