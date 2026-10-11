@@ -2,7 +2,7 @@
 
 Alle relevante wijzigingen aan het leenlaptop-schoonmaakscript worden in dit bestand vastgelegd.
 
-## [1.7.3] - In voorbereiding
+## [1.7.3] - 2026-10-11
 
 - Voorbeeldconfiguratie is geen verplicht programmabestand meer. Installatie werkt ook wanneer `config.example.json` is hernoemd naar `config.json`; de controle van programmabestanden blijft behouden.
 - Duidelijkere installer met vier stappen, gegroepeerde instellingen, leeftijdsgrenzen naast de mappen, herkenbare waarschuwingen en Nederlandstalige resultaten.

@@ -1,6 +1,6 @@
 # Leenlaptop Schoonmaak
 
-Hulpprogramma voor Windows waarmee u een leenaccount na gebruik lokaal opschoont. Versie **1.7.3** is in voorbereiding. Vereist Windows 10/11 en Windows PowerShell 5.1.
+Hulpprogramma voor Windows waarmee u een leenaccount na gebruik lokaal opschoont. Versie **1.7.3**, uitgebracht op **11 oktober 2026**. Vereist Windows 10/11 en Windows PowerShell 5.1.
 
 ## Gebruik
 
