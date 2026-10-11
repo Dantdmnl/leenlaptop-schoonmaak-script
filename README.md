@@ -1,6 +1,6 @@
 # Leenlaptop Schoonmaak
 
-Hulpprogramma voor Windows waarmee u een leenaccount na gebruik lokaal opschoont. Versie **1.7.2**, uitgebracht op **11 oktober 2026**. Vereist Windows 10/11 en Windows PowerShell 5.1.
+Hulpprogramma voor Windows waarmee u een leenaccount na gebruik lokaal opschoont. Versie **1.7.3** is in voorbereiding. Vereist Windows 10/11 en Windows PowerShell 5.1.
 
 ## Gebruik
 
@@ -46,7 +46,9 @@ Browseropschoning omvat de standaardopslaglocaties van Edge, Chrome en Firefox, 
 
 Instellingen staan na installatie in `C:\ProgramData\LeenlaptopSchoonmaak\config.json`. Alleen beheerders kunnen dit bestand en de programmabestanden wijzigen. Het doelaccount heeft alleen schrijftoegang tot de statusmap.
 
-Voor een eerste installatie kunt u een kopie van `config.example.json` opslaan als `config.json` naast de releasebestanden. Bij updates krijgt de configuratie van de bestaande installatie voorrang. Met `-ConfigPath` kiest u een ander JSON-bestand. Als dit bestand ontbreekt of ongeldig is, stopt de uitvoering.
+Voor een eerste installatie kunt u `config.example.json` kopieren of hernoemen naar `config.json` naast de releasebestanden. Het voorbeeldbestand is vanaf 1.7.3 niet nodig voor installatie of uitvoering; het blijft wel beschikbaar in het releasearchief. Bij updates krijgt de configuratie van de bestaande installatie voorrang. Met `-ConfigPath` kiest u een ander JSON-bestand. Als dit bestand ontbreekt of ongeldig is, stopt de uitvoering.
+
+De installer gebruikt drie stappen: account kiezen, instellingen controleren en installatie bevestigen. Het overzicht groepeert uitvoering, browsers, netwerk, bestanden en beheer. Bij bestandsopschoning staat de leeftijdsgrens naast de map. Kleuren ondersteunen de tekst: koppen en informatie zijn cyaan, uitgeschakelde opties grijs, waarschuwingen geel en een geslaagde installatie groen. Elke toestand is ook zonder kleur leesbaar.
 
 Voorbeeld van enkele instellingen, onderdeel van een volledig JSON-object:
 
@@ -123,6 +125,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Invoke-Tests.ps1
 .\tools\New-ReleaseArchive.ps1
 ```
 
-De 60 Pester-tests gebruiken uitsluitend tijdelijke bestanden en gesimuleerde systeemacties, inclusief browserprofielen met testgegevens, het aanvragen van administratorrechten, configuratiemigratie en het installatieoverzicht. De automatische Windows-controles omvatten syntaxcontrole, geselecteerde ScriptAnalyzer-regels, compilatie van de C#-helper en deze tests. Daarnaast controleert een integratietest op een tijdelijke Windows-machine van GitHub de profielinventarisatie, installatie, taakregistratie, toegangsrechten, snelkoppeling, opdrachtregel, rapportage en updates. Alle opschoonfuncties staan tijdens die integratietest uit. De test weigert uitvoering buiten GitHub Actions.
+De 64 Pester-tests gebruiken uitsluitend tijdelijke bestanden en gesimuleerde systeemacties, inclusief browserprofielen met testgegevens, het aanvragen van administratorrechten, configuratiemigratie en het installatieoverzicht. De automatische Windows-controles omvatten syntaxcontrole, geselecteerde ScriptAnalyzer-regels, compilatie van de C#-helper en deze tests. Daarnaast controleert een integratietest op een tijdelijke Windows-machine van GitHub de profielinventarisatie, installatie zonder voorbeeldbestand, taakregistratie, toegangsrechten, snelkoppeling, opdrachtregel, rapportage en updates. Alle opschoonfuncties staan tijdens die integratietest uit. De test weigert uitvoering buiten GitHub Actions.
 
 Het afsluiten van echte browsers, verwijderen van Wi-Fi-profielen en herstellen van de firewall zijn niet getest. Controleer deze functies en uw beheerconfiguratie met een tijdelijk testaccount voordat u het programma breed inzet. Op de ontwikkelcomputer worden geen echte gebruikersgegevens opgeschoond. Zie [VALIDATION.md](VALIDATION.md) voor de uitgevoerde controles en bronnen, [SERVICEDESK.md](SERVICEDESK.md) voor de acceptatietest en [AVG-COMPLIANCE.md](AVG-COMPLIANCE.md) voor de technische privacymaatregelen. De release bevat het volledige ZIP-archief en `SHA256SUMS.txt`.

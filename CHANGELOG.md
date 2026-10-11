@@ -2,6 +2,13 @@
 
 Alle relevante wijzigingen aan het leenlaptop-schoonmaakscript worden in dit bestand vastgelegd.
 
+## [1.7.3] - In voorbereiding
+
+- Voorbeeldconfiguratie is geen verplicht programmabestand meer. Installatie werkt ook wanneer `config.example.json` is hernoemd naar `config.json`; de controle van programmabestanden blijft behouden.
+- Duidelijkere installer met drie stappen, gegroepeerde instellingen, leeftijdsgrenzen naast de mappen, herkenbare waarschuwingen en Nederlandstalige resultaten.
+- Het overzicht vermeldt expliciet wanneer opschoning start en wanneer de bestaande configuratie voorrang heeft.
+- Vier tests toegevoegd; 64 tests in totaal. De Windows-integratietest installeert nu zonder voorbeeldbestand.
+
 ## [1.7.2] - 2026-10-11
 
 Deze release volgt op 1.7.0 en bevat ook de verbeteringen uit de ingetrokken versie 1.7.1.

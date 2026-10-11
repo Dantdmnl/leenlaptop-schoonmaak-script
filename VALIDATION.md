@@ -1,11 +1,11 @@
-# Validatie van 1.7.2
+# Validatie van 1.7.3
 
 Gecontroleerd op 11 oktober 2026.
 
 ## Geautomatiseerde controles
 
 - Syntaxcontrole voor PowerShell 5.1, geselecteerde ScriptAnalyzer-regels en compilatie van de C#-helper.
-- 60 Pester-tests met tijdelijke testbestanden en gesimuleerde systeemacties: UAC-verzoek en annuleren, veilige doorgifte van het bronpad, accountkeuze, profielinventarisatie, configuratiemigratie, taakvalidatie, installatieoverzicht, definitieve bevestiging, herstel na mislukte updates, leeftijdsfilters, links, vergrendeling, status, bewaartermijnen en browseropslag met testprofielen.
+- 64 Pester-tests met tijdelijke testbestanden en gesimuleerde systeemacties: UAC-verzoek en annuleren, veilige doorgifte van het bronpad, accountkeuze, profielinventarisatie, configuratiemigratie, taakvalidatie, gegroepeerd installatieoverzicht, definitieve bevestiging, installatie zonder voorbeeldbestand, herstel na mislukte updates, leeftijdsfilters, links, vergrendeling, status, bewaartermijnen en browseropslag met testprofielen.
 - Native WLAN-structuurafmetingen en Unicode-marshaling zonder WLAN-functies aan te roepen.
 - Integratietest op een tijdelijke Windows-machine van GitHub: inventarisatie van echte gebruikersprofielen, installatie, geplande taak, taakrechten, NTFS-rechten, snelkoppeling, opdrachtregel, rapportage, configuratiebehoud bij updates en beheer van taaktriggers. Alle opschoonfuncties staan uit. De test weigert uitvoering buiten GitHub Actions.
 

@@ -1,9 +1,9 @@
 #requires -Version 5.1
 Set-StrictMode -Version 2.0
-$script:UtilityVersion = '1.7.2'
+$script:UtilityVersion = '1.7.3'
 $script:Deadline = $null
 $script:TaskName = 'LeenlaptopSchoonmaak'
-$script:PackageFiles = @('LeenlaptopSchoonmaak.ps1', 'LeenlaptopSchoonmaak.psm1', 'config.example.json', 'WlanProfiles.cs')
+$script:PackageFiles = @('LeenlaptopSchoonmaak.ps1', 'LeenlaptopSchoonmaak.psm1', 'WlanProfiles.cs')
 
 function Get-DefaultConfiguration {
     [ordered]@{
@@ -167,27 +167,40 @@ function Get-AvailableTargetUsers {
     }
 }
 
+function Write-InstallerHeading {
+    param([string]$Title)
+    Write-Host ''
+    Write-Host ('  ' + $Title) -ForegroundColor Cyan
+    Write-Host ('  ' + ('-' * 60)) -ForegroundColor DarkGray
+}
+
+function Write-InstallerSetting {
+    param([string]$Label, [string]$Value, [ConsoleColor]$Color = 'Gray')
+    Write-Host ('  {0,-30} : {1}' -f $Label, $Value) -ForegroundColor $Color
+}
+
 function Select-TargetUser {
     $users = @(Get-AvailableTargetUsers | Sort-Object Account, Sid)
     if ($users.Count -eq 0) { throw 'Geen beschikbare gebruikersprofielen gevonden. Log eerst eenmaal in met het leenaccount.' }
     while ($true) {
-        Write-Host ''
-        Write-Host 'Kies het leenaccount waarvoor het programma wordt ingesteld.'
+        Write-InstallerHeading 'Stap 1 van 3 - Leenaccount kiezen'
+        Write-Host '  Kies het account waarvan gegevens mogen worden opgeschoond.' -ForegroundColor Gray
         for ($index = 0; $index -lt $users.Count; $index++) {
-            Write-Host ("[{0}] {1}  ({2})" -f ($index + 1), $users[$index].Account, $users[$index].ProfilePath)
+            Write-Host ("  [{0}] {1}" -f ($index + 1), $users[$index].Account) -ForegroundColor White
+            Write-Host ('      ' + $users[$index].ProfilePath) -ForegroundColor DarkGray
         }
         $answer = Read-Host 'Accountnummer (0 = annuleren)'
         if ($answer -eq '0') { return $null }
         $number = 0
         if (-not [int]::TryParse($answer, [ref]$number) -or $number -lt 1 -or $number -gt $users.Count) {
-            Write-Host 'Kies een nummer uit de lijst.'
+            Write-Host '  Kies een nummer uit de lijst.' -ForegroundColor Yellow
             continue
         }
         $selected = $users[$number - 1]
-        Write-Host "Doelaccount: $($selected.Account)"
-        Write-Host "Profielmap:  $($selected.ProfilePath)"
-        Write-Host "SID:         $($selected.Sid)"
-        Write-Host 'Installatie verwijdert geen gebruikersgegevens.'
+        Write-Host ''
+        Write-InstallerSetting 'Gekozen account' $selected.Account White
+        Write-InstallerSetting 'Profielmap' $selected.ProfilePath
+        Write-InstallerSetting 'SID' $selected.Sid DarkGray
         $confirmation = Read-Host 'Dit account gebruiken? (J = doorgaan, N = opnieuw kiezen, 0 = annuleren)'
         if ($confirmation -eq '0') { return $null }
         if ($confirmation -ieq 'J') { return (Resolve-TargetUser '' $selected.Sid) }
@@ -196,43 +209,76 @@ function Select-TargetUser {
 
 function Show-InstallationConfiguration {
     param([System.Collections.IDictionary]$Config, [System.Collections.IDictionary]$User, [string]$ConfigSource, [string]$InstallPath)
-    Write-Host ''
-    Write-Host 'Controleer de installatie en opschooninstellingen'
-    Write-Host "Doelaccount: $($User.Account)"
-    Write-Host "Profielmap: $($User.ProfilePath)"
-    Write-Host "Installatiemap: $InstallPath"
+    Write-InstallerHeading 'Stap 2 van 3 - Instellingen controleren'
+    Write-InstallerSetting 'Doelaccount' $User.Account White
+    Write-InstallerSetting 'Profielmap' $User.ProfilePath
+    Write-InstallerSetting 'Installatiemap' $InstallPath
     $sourceLabel = if ($ConfigSource -eq 'defaults') { 'standaardinstellingen' } else { $ConfigSource }
-    Write-Host "Configuratiebron: $sourceLabel"
+    Write-InstallerSetting 'Configuratiebron' $sourceLabel Cyan
+    if ($ConfigSource -eq (Join-Path $InstallPath 'config.json')) {
+        Write-Host '  Bestaande instellingen blijven behouden; bestanden naast de installer krijgen geen voorrang.' -ForegroundColor DarkGray
+    }
+    $sections = @{
+        EnableScheduledTask = 'UITVOERING'; EnableBrowserCleanup = 'BROWSERS'
+        EnableWiFiCleanup = 'NETWERK'; EnableTempCleanup = 'BESTANDEN'
+        EnableBackupCleanup = 'BEHEER EN BEWAARTERMIJNEN'
+    }
+    $ageKeys = @{
+        EnableDownloadsCleanup = 'DownloadsMaxAgeDays'; EnableDocumentsCleanup = 'DocumentsMaxAgeDays'
+        EnablePicturesCleanup = 'PicturesMaxAgeDays'; EnableVideosCleanup = 'VideosMaxAgeDays'
+        EnableMusicCleanup = 'MusicMaxAgeDays'
+    }
     $labels = [ordered]@{
-        EnableScheduledTask = 'Geplande taak (handmatig starten)'; RunAtLogon = 'Automatisch opschonen bij aanmelden'
+        EnableScheduledTask = 'Geplande taak'; RunAtLogon = 'Opschonen bij aanmelden'
         EnableShortcut = 'Bureaubladsnelkoppeling'; EnableBrowserCleanup = 'Browsergegevens verwijderen'
         BrowserList = 'Browsers'; EnableWiFiCleanup = 'Wi-Fi-profielen verwijderen'; AllowedWiFi = 'Wi-Fi-profielen behouden'
-        EnableFirewallReset = 'Firewall herstellen (aangepaste regels verwijderen)'
-        EnableTempCleanup = 'Tijdelijke bestanden verwijderen'; EnableDownloadsCleanup = 'Downloads opschonen'
-        DownloadsMaxAgeDays = 'Downloads: ouder dan (dagen)'; EnableDocumentsCleanup = 'Documenten opschonen'
-        DocumentsMaxAgeDays = 'Documenten: ouder dan (dagen)'; EnablePicturesCleanup = 'Afbeeldingen opschonen'
-        PicturesMaxAgeDays = 'Afbeeldingen: ouder dan (dagen)'; EnableVideosCleanup = 'Videos opschonen'
-        VideosMaxAgeDays = 'Videos: ouder dan (dagen)'; EnableMusicCleanup = 'Muziek opschonen'
-        MusicMaxAgeDays = 'Muziek: ouder dan (dagen)'; EnableBackupCleanup = 'Oude installatieback-ups opruimen'
-        MaxBackupCount = 'Maximumaantal installatieback-ups'; LogRetentionDays = 'Bewaartermijn logboeken en back-ups (dagen)'
-        MaxLogSizeMB = 'Maximumgrootte logboek (MB)'; MaxRetries = 'Maximumaantal pogingen'
-        MaxExecutionMinutes = 'Maximale uitvoeringstijd (minuten)'
+        EnableFirewallReset = 'Firewall herstellen'
+        EnableTempCleanup = 'Tijdelijke bestanden'; EnableDownloadsCleanup = 'Downloads opschonen'
+        EnableDocumentsCleanup = 'Documenten opschonen'; EnablePicturesCleanup = 'Afbeeldingen opschonen'
+        EnableVideosCleanup = 'Videobestanden opschonen'; EnableMusicCleanup = 'Muziek opschonen'
+        EnableBackupCleanup = 'Installatieback-ups opruimen'; MaxBackupCount = 'Maximumaantal back-ups'
+        LogRetentionDays = 'Logboeken en back-ups (dagen)'; MaxLogSizeMB = 'Maximumgrootte logboek (MB)'
+        MaxRetries = 'Maximumaantal pogingen'; MaxExecutionMinutes = 'Uitvoeringstijd (minuten)'
     }
     foreach ($key in $labels.Keys) {
+        if ($sections.ContainsKey($key)) {
+            Write-Host ''
+            Write-Host ('  ' + $sections[$key]) -ForegroundColor Cyan
+        }
         $value = $Config[$key]
-        if ($value -is [bool]) { $value = if ($value) { 'Aan' } else { 'Uit' } }
+        $color = 'Gray'
+        if ($value -is [bool]) {
+            $color = if ($value) { 'White' } else { 'DarkGray' }
+            $value = if ($value) { 'Aan' } else { 'Uit' }
+        }
         elseif ($value -is [array]) { $value = if ($value.Count) { $value -join ', ' } else { '(geen)' } }
-        Write-Host ('{0}: {1}' -f $labels[$key], $value)
+        if ($ageKeys.ContainsKey($key)) {
+            if ($Config[$key]) { $value += ' - ouder dan ' + $Config[$ageKeys[$key]] + ' dagen' }
+            else { $value += ' (grens: ' + $Config[$ageKeys[$key]] + ' dagen)' }
+        }
+        Write-InstallerSetting $labels[$key] ([string]$value) $color
     }
-    Write-Host 'Installatie verwijdert geen gebruikersgegevens. Opschoning verwijdert gegevens definitief.'
-    if ($Config.EnableBrowserCleanup) { Write-Host 'Browseropschoning verwijdert ook opgeslagen aanmeldingen, instellingen en bladwijzers.' }
+    Write-Host ''
+    $mode = if ($Config.RunAtLogon) { 'Automatisch bij aanmelden EN handmatig.' } else { 'Alleen handmatig; niet automatisch bij aanmelden.' }
+    Write-Host '  WANNEER WORDT ER OPGESCHOOND?' -ForegroundColor Cyan
+    Write-Host ('  ' + $mode) -ForegroundColor $(if ($Config.RunAtLogon) { 'Yellow' } else { 'White' })
+    Write-Host '  Installatie zelf verwijdert geen gebruikersgegevens.' -ForegroundColor Gray
+    Write-Host ''
+    Write-Host '  LET OP BIJ OPSCHONING' -ForegroundColor Yellow
+    Write-Host '  Gegevens worden definitief verwijderd. Controleer het gekozen account.' -ForegroundColor Yellow
+    if ($Config.EnableBrowserCleanup) { Write-Host '  Browsers: ook opgeslagen aanmeldingen, instellingen en bladwijzers verdwijnen.' -ForegroundColor Yellow }
     if ($Config.EnableWiFiCleanup -or $Config.EnableFirewallReset) {
-        Write-Host 'Wi-Fi en firewall zijn apparaatinstellingen: wijzigingen kunnen ook andere gebruikers raken en vereisen administratorrechten.'
+        Write-Host '  Wi-Fi en firewall: raken het hele apparaat en vereisen administratorrechten.' -ForegroundColor Yellow
     }
-    if ($Config.RunAtLogon) { Write-Host 'Let op: na installatie worden gegevens automatisch verwijderd bij aanmelden met het doelaccount.' }
+    if ($Config.EnableFirewallReset) { Write-Host '  Firewall herstellen verwijdert aangepaste firewallregels.' -ForegroundColor Yellow }
+    if ($Config.RunAtLogon) { Write-Host '  Let op: na installatie worden gegevens automatisch verwijderd bij aanmelden met het doelaccount.' -ForegroundColor Yellow }
+    Write-Host ''
+    Write-Host '  Andere instellingen nodig? Annuleer en wijzig het bestand bij Configuratiebron.' -ForegroundColor Gray
+    if ($ConfigSource -eq 'defaults') { Write-Host '  Sla hiervoor config.example.json op als config.json naast de installer.' -ForegroundColor Gray }
 }
 
 function Confirm-InstallationConfiguration {
+    Write-InstallerHeading 'Stap 3 van 3 - Installatie bevestigen'
     while ($true) {
         $answer = Read-Host 'Installeren met deze instellingen? (J = installeren, N of 0 = annuleren)'
         if ($answer -ieq 'J') { return $true }
@@ -269,9 +315,24 @@ exit `$code
             throw 'Installatie niet gestart: het verzoek om administratorrechten is geannuleerd of mislukt. Start de installer opnieuw en bevestig UAC.'
         }
     }
+    Write-InstallerHeading ('Leenlaptop Schoonmaak ' + $script:UtilityVersion)
+    Write-Host '  Installeren voor een gekozen leenaccount. Geen opschoning tijdens installatie.' -ForegroundColor Gray
     $result = Invoke-LeenlaptopUtility -Action Install -Interactive -SourcePath $SourcePath -InstallPath "$env:ProgramData\LeenlaptopSchoonmaak"
-    $result | Format-List Version, Action, Status, ConfigSource | Out-Host
-    $result.Results | Format-Table Name, Status, Removed, Failed, Detail -Wrap | Out-Host
+    Write-InstallerHeading 'Resultaat'
+    $statusLabel = switch ($result.Status) {
+        'Success' { 'Installatie geslaagd' }; 'Cancelled' { 'Geannuleerd; niets gewijzigd' }
+        'Partial' { 'Gedeeltelijk geslaagd; controleer de meldingen' }; default { 'Installatie niet geslaagd' }
+    }
+    $statusColor = if ($result.Status -eq 'Success') { 'Green' } elseif ($result.Status -eq 'Cancelled') { 'Gray' } else { 'Yellow' }
+    Write-Host ('  ' + $statusLabel) -ForegroundColor $statusColor
+    Write-InstallerSetting 'Exitcode' ([string]$result.ExitCode)
+    $result.Results | Format-Table @{ Label = 'Onderdeel'; Expression = { $_.Name } },
+        @{ Label = 'Resultaat'; Expression = {
+            switch ($_.Status) {
+                'Success' { 'Geslaagd' }; 'Skipped' { 'Overgeslagen' }; 'Partial' { 'Gedeeltelijk geslaagd' }
+                'Planned' { 'Voorvertoning' }; default { 'Mislukt' }
+            }
+        } }, @{ Label = 'Melding'; Expression = { $_.Detail } } -Wrap | Out-Host
     return $result.ExitCode
 }
 
@@ -944,6 +1005,7 @@ function Invoke-LeenlaptopUtility {
         }
         if ($PSCmdlet.ShouldProcess($InstallPath, 'Pakket installeren, configuratie bewaren en voorzieningen instellen')) {
             if (-not (Test-Administrator)) { throw 'Installatie vereist administratorrechten.' }
+            if ($Interactive) { Write-Host '  Installatie wordt uitgevoerd. Wacht op het resultaat.' -ForegroundColor Cyan }
             $legacyTaskName = ''
             if ($loaded.ContainsKey('LegacyTaskName')) { $legacyTaskName = $loaded.LegacyTaskName }
             $results = @(Install-UtilityPackage $SourcePath $InstallPath $config $legacyTaskName)

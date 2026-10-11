@@ -1,6 +1,6 @@
 # Servicedeskhandleiding
 
-Leenlaptop Schoonmaak 1.7.2, 11 oktober 2026.
+Leenlaptop Schoonmaak 1.7.3, in voorbereiding.
 
 ## Installeren
 
@@ -52,6 +52,7 @@ Wijzigingen aan opschooninstellingen gelden bij de volgende uitvoering. Instelli
 
 | Probleem | Actie |
 | --- | --- |
+| `Releasebestand ontbreekt: config.example.json` in 1.7.2 | Bewaar uw aangepaste `config.json` en maak daarnaast een kopie met de naam `config.example.json`. Vanaf 1.7.3 is dit voorbeeldbestand optioneel |
 | UAC geannuleerd of administratorrechten ontbreken | Start de installer opnieuw en bevestig UAC. Voor rechtstreeks gebruik van `-Install` opent u PowerShell als administrator |
 | Ander account dan doelaccount | Meld het doelaccount aan; gebruik een beheeraccount alleen voor installatie |
 | Leenaccount ontbreekt in de lijst | Meld u eerst eenmaal aan met dit account; controleer of het account nog bestaat en het profiel lokaal beschikbaar is |

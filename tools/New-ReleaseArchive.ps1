@@ -12,7 +12,7 @@ $paths = @($files | ForEach-Object {
     $path
 })
 New-Item -Path $OutputPath -ItemType Directory -Force | Out-Null
-$archive = Join-Path $OutputPath 'LeenlaptopSchoonmaak-1.7.2.zip'
+$archive = Join-Path $OutputPath 'LeenlaptopSchoonmaak-1.7.3.zip'
 Compress-Archive -LiteralPath $paths -DestinationPath $archive -Force
 $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
 '{0}  {1}' -f $hash, (Split-Path $archive -Leaf) | Set-Content -LiteralPath (Join-Path $OutputPath 'SHA256SUMS.txt') -Encoding ASCII

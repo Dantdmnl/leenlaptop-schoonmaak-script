@@ -252,10 +252,20 @@ throw 'Mag nooit worden uitgevoerd'
             $config = Get-DefaultConfiguration
             $config.RunAtLogon = $true
             Show-InstallationConfiguration $config @{ Account = 'leenaccount'; ProfilePath = $TestDrive } 'defaults' $TestDrive
-            Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Automatisch opschonen bij aanmelden: Aan' }
-            Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Geplande taak (handmatig starten): Aan' }
-            Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Documenten opschonen: Uit' }
-            Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -like 'Let op: na installatie*' }
+            Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -match '^\s+Opschonen bij aanmelden\s+: Aan$' }
+            Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -match '^\s+Geplande taak\s+: Aan$' }
+            Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -match '^\s+Documenten opschonen\s+: Uit \(grens: 30 dagen\)$' }
+            Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -like '*Let op: na installatie*' }
+        }
+        It 'groepeert instellingen en koppelt bewaartermijnen aan de juiste map' {
+            Show-InstallationConfiguration (Get-DefaultConfiguration) @{ Account = 'leenaccount'; ProfilePath = $TestDrive } 'defaults' $TestDrive
+            Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq '  BESTANDEN' }
+            Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -match '^\s+Downloads opschonen\s+: Aan - ouder dan 7 dagen$' }
+            Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -like '*Alleen handmatig; niet automatisch*' }
+        }
+        It 'maakt duidelijk wanneer de bestaande configuratie voorrang heeft' {
+            Show-InstallationConfiguration (Get-DefaultConfiguration) @{ Account = 'leenaccount'; ProfilePath = $TestDrive } (Join-Path $TestDrive 'config.json') $TestDrive
+            Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -like '*Bestaande instellingen blijven behouden*' }
         }
         It 'toont de geladen configuratie voordat definitieve toestemming wordt gevraagd' {
             $script:overviewShown = $false
@@ -471,6 +481,25 @@ throw 'Mag nooit worden uitgevoerd'
             Mock Get-UtilityTaskSecurityDescriptor { 'D:P(A;;GA;;;SY)(A;;GA;;;BA)' }
             Mock Set-UtilityTaskPermissions {}
             Mock Set-UtilityShortcut {}
+        }
+        It 'installeert met config.json zonder het voorbeeldbestand en controleert daarna de integriteit' {
+            $config.RunAtLogon = $true
+            $config | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $source 'config.json')
+            Test-Path (Join-Path $source 'config.example.json') | Should Be $false
+            $loaded = Read-UtilityConfiguration $source $destination (Join-Path $source 'config.json')
+            $results = @(Install-UtilityPackage $source $destination $loaded.Config)
+            Get-ResultExitCode $results | Should Be 0
+            { Test-InstalledPackage $destination } | Should Not Throw
+            $saved = Get-Content (Join-Path $destination 'config.json') -Raw | ConvertFrom-Json
+            $saved.RunAtLogon | Should Be $true
+            $manifest = Get-Content (Join-Path $destination 'manifest.json') -Raw | ConvertFrom-Json
+            ($manifest.Hashes.PSObject.Properties.Name -contains 'config.example.json') | Should Be $false
+        }
+        It 'blijft ontbrekende programmabestanden weigeren voordat iets wordt vervangen' {
+            Remove-Item -LiteralPath (Join-Path $source 'LeenlaptopSchoonmaak.psm1')
+            { Install-UtilityPackage $source $destination $config } | Should Throw
+            (Get-Content (Join-Path $destination 'LeenlaptopSchoonmaak.ps1') -Raw).Trim() | Should Be 'old script'
+            Assert-MockCalled Set-UtilityTask -Times 0 -Exactly -Scope It
         }
         It 'herstelt bestanden en behoudt het oude script wanneer taakregistratie faalt' {
             Mock Set-UtilityTask { throw 'task failed' }

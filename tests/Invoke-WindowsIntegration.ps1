@@ -19,6 +19,12 @@ $installPath = Join-Path $caseRoot 'LeenlaptopSchoonmaak'
 $configPath = Join-Path $caseRoot 'config.json'
 New-Item $caseRoot -ItemType Directory | Out-Null
 Import-Module (Join-Path $source 'LeenlaptopSchoonmaak.psm1') -Force
+$packageSource = Join-Path $caseRoot 'release-source'
+New-Item $packageSource -ItemType Directory | Out-Null
+foreach ($name in @('LeenlaptopSchoonmaak.ps1', 'LeenlaptopSchoonmaak.psm1', 'WlanProfiles.cs')) {
+    Copy-Item -LiteralPath (Join-Path $source $name) -Destination (Join-Path $packageSource $name)
+}
+$source = $packageSource
 $config = & (Get-Module LeenlaptopSchoonmaak) { Get-DefaultConfiguration }
 foreach ($key in @($config.Keys)) {
     if ($key -like 'Enable*') { $config[$key] = $false }
