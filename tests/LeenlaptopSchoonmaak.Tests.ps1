@@ -145,6 +145,34 @@ InModuleScope LeenlaptopSchoonmaak {
     }
 
     Describe 'Configuratie en migratie' {
+        It 'migreert de oude JSON-taaksleutel zonder de waarde te veranderen' {
+            $path = Join-Path $TestDrive 'old-task.json'
+            '{"EnableStartupTask":false}' | Set-Content $path
+            $loaded = Read-UtilityConfiguration $TestDrive $TestDrive $path
+            $loaded.Config.EnableScheduledTask | Should Be $false
+            $loaded.Config.Contains('EnableStartupTask') | Should Be $false
+        }
+        It 'weigert tegenstrijdige oude en nieuwe taaksleutels' {
+            $path = Join-Path $TestDrive 'conflict-task.json'
+            '{"EnableStartupTask":false,"EnableScheduledTask":true}' | Set-Content $path
+            { Read-UtilityConfiguration $TestDrive $TestDrive $path } | Should Throw
+        }
+        It 'accepteert gelijke oude en nieuwe taaksleutels' {
+            $path = Join-Path $TestDrive 'same-task.json'
+            '{"EnableScheduledTask":false,"EnableStartupTask":false}' | Set-Content $path
+            (Read-UtilityConfiguration $TestDrive $TestDrive $path).Config.EnableScheduledTask | Should Be $false
+        }
+        It 'weigert automatisch aanmelden zonder geplande taak' {
+            $config = Get-DefaultConfiguration
+            $config.EnableScheduledTask = $false
+            $config.RunAtLogon = $true
+            { Test-UtilityConfiguration $config } | Should Throw
+        }
+        It 'migreert de oude taaksleutel uit scripts met vaste waarden' {
+            $path = Join-Path $TestDrive 'old-task.ps1'
+            '$EnableStartupTask = $false' | Set-Content $path
+            (Import-LegacyConfiguration $path).EnableScheduledTask | Should Be $false
+        }
         It 'heeft een expliciete opt-in voor automatische opschoning' {
             $config = Get-DefaultConfiguration
             $config.RunAtLogon | Should Be $false
@@ -204,6 +232,70 @@ throw 'Mag nooit worden uitgevoerd'
             foreach ($key in $defaults.Keys) {
                 ($example.$key | ConvertTo-Json -Compress) | Should Be ($defaults[$key] | ConvertTo-Json -Compress)
             }
+        }
+    }
+
+    Describe 'Installatieoverzicht en bevestiging' {
+        BeforeEach {
+            Mock Write-Host {}
+            Mock Test-Administrator { $true }
+            Mock Select-TargetUser { @{ Sid = 'S-1-5-21-1-2-3-1001'; Account = 'LAPTOP\leenaccount'; ProfilePath = $TestDrive } }
+            Mock Read-UtilityConfiguration {
+                $config = Get-DefaultConfiguration
+                $config.DownloadsMaxAgeDays = 19
+                @{ Config = $config; Source = 'bestaande-config.json' }
+            }
+            Mock Install-UtilityPackage { @() }
+            Mock Enter-UtilityLock { $null }
+        }
+        It 'toont alle instelbare opties met Nederlandse labels' {
+            $config = Get-DefaultConfiguration
+            $config.RunAtLogon = $true
+            Show-InstallationConfiguration $config @{ Account = 'leenaccount'; ProfilePath = $TestDrive } 'defaults' $TestDrive
+            Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Automatisch opschonen bij aanmelden: Aan' }
+            Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Geplande taak (handmatig starten): Aan' }
+            Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Documenten opschonen: Uit' }
+            Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -like 'Let op: na installatie*' }
+        }
+        It 'toont de geladen configuratie voordat definitieve toestemming wordt gevraagd' {
+            $script:overviewShown = $false
+            Mock Show-InstallationConfiguration {
+                if ($Config.DownloadsMaxAgeDays -ne 19 -or $ConfigSource -ne 'bestaande-config.json') { throw 'Verkeerde configuratie' }
+                $script:overviewShown = $true
+            }
+            Mock Confirm-InstallationConfiguration {
+                if (-not $script:overviewShown) { throw 'Overzicht ontbreekt' }
+                $false
+            }
+            $report = Invoke-LeenlaptopUtility -Action Install -Interactive -InstallPath $TestDrive
+            $report.Status | Should Be 'Cancelled'
+            Assert-MockCalled Install-UtilityPackage -Times 0 -Exactly -Scope It
+            Assert-MockCalled Enter-UtilityLock -Times 0 -Exactly -Scope It
+        }
+        It 'installeert pas nadat het configuratieoverzicht is bevestigd' {
+            Mock Confirm-InstallationConfiguration { $true }
+            $report = Invoke-LeenlaptopUtility -Action Install -Interactive -InstallPath $TestDrive
+            $report.ExitCode | Should Be 0
+            Assert-MockCalled Install-UtilityPackage -Times 1 -Exactly -Scope It -ParameterFilter { $Config.DownloadsMaxAgeDays -eq 19 }
+        }
+        It 'toont het overzicht bij WhatIf zonder een extra bevestiging te vragen' {
+            Mock Confirm-InstallationConfiguration { throw 'Mag niet worden aangeroepen' }
+            Mock Show-InstallationConfiguration {}
+            $report = Invoke-LeenlaptopUtility -Action Install -Interactive -InstallPath $TestDrive -WhatIf
+            $report.Results[0].Status | Should Be 'Planned'
+            Assert-MockCalled Show-InstallationConfiguration -Times 1 -Exactly -Scope It
+            Assert-MockCalled Install-UtilityPackage -Times 0 -Exactly -Scope It
+        }
+    }
+
+    Describe 'Definitieve bevestigingsvraag' {
+        It 'kiest niet standaard voor installeren bij lege of ongeldige invoer' {
+            Mock Write-Host {}
+            $script:answers = New-Object 'System.Collections.Generic.Queue[string]'
+            foreach ($answer in @('', 'misschien', 'n')) { $script:answers.Enqueue($answer) }
+            Mock Read-Host { $script:answers.Dequeue() }
+            (Confirm-InstallationConfiguration) | Should Be $false
+            Assert-MockCalled Read-Host -Times 3 -Exactly -Scope It
         }
     }
 

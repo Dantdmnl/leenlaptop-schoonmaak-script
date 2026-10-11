@@ -2,7 +2,7 @@
   "SchemaVersion": 1,
   "TargetUserSid": "",
   "EnableShortcut": true,
-  "EnableStartupTask": true,
+  "EnableScheduledTask": true,
   "RunAtLogon": false,
   "EnableBrowserCleanup": true,
   "BrowserList": ["msedge", "firefox", "chrome"],

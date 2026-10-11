@@ -2,7 +2,17 @@
 
 Alle relevante wijzigingen aan het leenlaptop-schoonmaakscript worden in dit bestand vastgelegd.
 
-## [1.7.1] - 2026-10-11
+## [1.7.2] - In voorbereiding
+
+- `EnableStartupTask` hernoemd naar `EnableScheduledTask`. Oude JSON-configuraties en scripts blijven ondersteund; herinstallatie slaat alleen de nieuwe sleutel op.
+- Automatisch opschonen bij aanmelden zonder geplande taak wordt geweigerd, net als tegenstrijdige oude en nieuwe taaksleutels.
+- De interactieve installer toont de geladen configuratie met Nederlandse labels, bronbestand, installatiemap en waarschuwingen voor gegevensverwijdering.
+- Definitieve toestemming wordt pas na het configuratieoverzicht gevraagd. Annuleren wijzigt niets; geautomatiseerde installatie blijft zonder vragen werken.
+- Tien tests toegevoegd; 60 tests in totaal. De Windows-integratietest controleert ook migratie van de oude JSON-taaksleutel.
+
+## [1.7.1] - 2026-10-11 (ingetrokken)
+
+De GitHub-release is ingetrokken. De onderstaande wijzigingen blijven onderdeel van de broncode en volgende versie.
 
 - Interactieve installatie met een genummerde lijst van beschikbare gebruikersprofielen, controle van de gekozen SID en expliciete bevestiging.
 - Annuleren en opnieuw kiezen zonder installatie; `-TargetUser` blijft beschikbaar voor geautomatiseerd beheer.

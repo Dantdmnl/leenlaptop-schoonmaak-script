@@ -1,6 +1,6 @@
 #requires -Version 5.1
 Set-StrictMode -Version 2.0
-$script:UtilityVersion = '1.7.1'
+$script:UtilityVersion = '1.7.2'
 $script:Deadline = $null
 $script:TaskName = 'LeenlaptopSchoonmaak'
 $script:PackageFiles = @('LeenlaptopSchoonmaak.ps1', 'LeenlaptopSchoonmaak.psm1', 'config.example.json', 'WlanProfiles.cs')
@@ -8,7 +8,7 @@ $script:PackageFiles = @('LeenlaptopSchoonmaak.ps1', 'LeenlaptopSchoonmaak.psm1'
 function Get-DefaultConfiguration {
     [ordered]@{
         SchemaVersion = 1; TargetUserSid = ''; EnableShortcut = $true
-        EnableStartupTask = $true; RunAtLogon = $false
+        EnableScheduledTask = $true; RunAtLogon = $false
         EnableBrowserCleanup = $true; BrowserList = @('msedge', 'firefox', 'chrome')
         EnableWiFiCleanup = $true; AllowedWiFi = @(); EnableTempCleanup = $true
         EnableDownloadsCleanup = $true; DownloadsMaxAgeDays = 7
@@ -39,6 +39,9 @@ function Test-UtilityConfiguration {
         }
     }
     if ($Config.SchemaVersion -ne 1) { throw 'Deze configuratieversie wordt niet ondersteund.' }
+    if ($Config.RunAtLogon -and -not $Config.EnableScheduledTask) {
+        throw 'RunAtLogon vereist EnableScheduledTask: true. Schakel de geplande taak in of zet automatisch opschonen bij aanmelden uit.'
+    }
     if ($Config.TargetUserSid -isnot [string] -or ($Config.TargetUserSid -and $Config.TargetUserSid -notmatch '^S-1-(5-21|12-1)-\d+-\d+-\d+-\d+$')) {
         throw 'TargetUserSid moet leeg of een gebruikers-SID zijn.'
     }
@@ -66,6 +69,7 @@ function Import-LegacyConfiguration {
         if ($left -is [System.Management.Automation.Language.ConvertExpressionAst]) { $left = $left.Child }
         if ($left -isnot [System.Management.Automation.Language.VariableExpressionAst]) { continue }
         $name = $left.VariablePath.UserPath
+        if ($name -eq 'EnableStartupTask') { $name = 'EnableScheduledTask' }
         if ((-not $config.Contains($name) -and $name -ne 'TaskName') -or $seen.ContainsKey($name)) { continue }
         try {
             $right = $assignment.Right
@@ -98,6 +102,14 @@ function Read-UtilityConfiguration {
         if ($inputConfig -isnot [pscustomobject]) { throw 'Configuratie moet een JSON-object zijn.' }
         $config = Get-DefaultConfiguration
         foreach ($property in $inputConfig.PSObject.Properties) {
+            if ($property.Name -eq 'EnableStartupTask') {
+                $canonical = $inputConfig.PSObject.Properties['EnableScheduledTask']
+                if ($canonical -and ($canonical.Value -isnot [bool] -or $property.Value -isnot [bool] -or $canonical.Value -ne $property.Value)) {
+                    throw 'EnableStartupTask en EnableScheduledTask spreken elkaar tegen. Gebruik alleen EnableScheduledTask.'
+                }
+                $config.EnableScheduledTask = $property.Value
+                continue
+            }
             if (-not $config.Contains($property.Name)) { throw "Onbekende configuratiesleutel: $($property.Name)" }
             $config[$property.Name] = $property.Value
         }
@@ -176,9 +188,56 @@ function Select-TargetUser {
         Write-Host "Profielmap:  $($selected.ProfilePath)"
         Write-Host "SID:         $($selected.Sid)"
         Write-Host 'Installatie verwijdert geen gebruikersgegevens.'
-        $confirmation = Read-Host 'Installeren voor dit account? (J = installeren, N = opnieuw kiezen, 0 = annuleren)'
+        $confirmation = Read-Host 'Dit account gebruiken? (J = doorgaan, N = opnieuw kiezen, 0 = annuleren)'
         if ($confirmation -eq '0') { return $null }
         if ($confirmation -ieq 'J') { return (Resolve-TargetUser '' $selected.Sid) }
+    }
+}
+
+function Show-InstallationConfiguration {
+    param([System.Collections.IDictionary]$Config, [System.Collections.IDictionary]$User, [string]$ConfigSource, [string]$InstallPath)
+    Write-Host ''
+    Write-Host 'Controleer de installatie en opschooninstellingen'
+    Write-Host "Doelaccount: $($User.Account)"
+    Write-Host "Profielmap: $($User.ProfilePath)"
+    Write-Host "Installatiemap: $InstallPath"
+    $sourceLabel = if ($ConfigSource -eq 'defaults') { 'standaardinstellingen' } else { $ConfigSource }
+    Write-Host "Configuratiebron: $sourceLabel"
+    $labels = [ordered]@{
+        EnableScheduledTask = 'Geplande taak (handmatig starten)'; RunAtLogon = 'Automatisch opschonen bij aanmelden'
+        EnableShortcut = 'Bureaubladsnelkoppeling'; EnableBrowserCleanup = 'Browsergegevens verwijderen'
+        BrowserList = 'Browsers'; EnableWiFiCleanup = 'Wi-Fi-profielen verwijderen'; AllowedWiFi = 'Wi-Fi-profielen behouden'
+        EnableFirewallReset = 'Firewall herstellen (aangepaste regels verwijderen)'
+        EnableTempCleanup = 'Tijdelijke bestanden verwijderen'; EnableDownloadsCleanup = 'Downloads opschonen'
+        DownloadsMaxAgeDays = 'Downloads: ouder dan (dagen)'; EnableDocumentsCleanup = 'Documenten opschonen'
+        DocumentsMaxAgeDays = 'Documenten: ouder dan (dagen)'; EnablePicturesCleanup = 'Afbeeldingen opschonen'
+        PicturesMaxAgeDays = 'Afbeeldingen: ouder dan (dagen)'; EnableVideosCleanup = 'Videos opschonen'
+        VideosMaxAgeDays = 'Videos: ouder dan (dagen)'; EnableMusicCleanup = 'Muziek opschonen'
+        MusicMaxAgeDays = 'Muziek: ouder dan (dagen)'; EnableBackupCleanup = 'Oude installatieback-ups opruimen'
+        MaxBackupCount = 'Maximumaantal installatieback-ups'; LogRetentionDays = 'Bewaartermijn logboeken en back-ups (dagen)'
+        MaxLogSizeMB = 'Maximumgrootte logboek (MB)'; MaxRetries = 'Maximumaantal pogingen'
+        MaxExecutionMinutes = 'Maximale uitvoeringstijd (minuten)'
+    }
+    foreach ($key in $labels.Keys) {
+        $value = $Config[$key]
+        if ($value -is [bool]) { $value = if ($value) { 'Aan' } else { 'Uit' } }
+        elseif ($value -is [array]) { $value = if ($value.Count) { $value -join ', ' } else { '(geen)' } }
+        Write-Host ('{0}: {1}' -f $labels[$key], $value)
+    }
+    Write-Host 'Installatie verwijdert geen gebruikersgegevens. Opschoning verwijdert gegevens definitief.'
+    if ($Config.EnableBrowserCleanup) { Write-Host 'Browseropschoning verwijdert ook opgeslagen aanmeldingen, instellingen en bladwijzers.' }
+    if ($Config.EnableWiFiCleanup -or $Config.EnableFirewallReset) {
+        Write-Host 'Wi-Fi en firewall zijn apparaatinstellingen: wijzigingen kunnen ook andere gebruikers raken en vereisen administratorrechten.'
+    }
+    if ($Config.RunAtLogon) { Write-Host 'Let op: na installatie worden gegevens automatisch verwijderd bij aanmelden met het doelaccount.' }
+}
+
+function Confirm-InstallationConfiguration {
+    while ($true) {
+        $answer = Read-Host 'Installeren met deze instellingen? (J = installeren, N of 0 = annuleren)'
+        if ($answer -ieq 'J') { return $true }
+        if ($answer -ieq 'N' -or $answer -eq '0') { return $false }
+        Write-Host 'Bevestig met J of annuleer met N of 0.'
     }
 }
 
@@ -510,7 +569,7 @@ function Set-UtilityFilePermissions {
 
 function Set-UtilityTask {
     param([string]$InstallPath, [System.Collections.IDictionary]$Config)
-    if (-not $Config.EnableStartupTask) {
+    if (-not $Config.EnableScheduledTask) {
         if (Get-ScheduledTask -TaskName $script:TaskName -ErrorAction SilentlyContinue) {
             Unregister-ScheduledTask -TaskName $script:TaskName -Confirm:$false -ErrorAction Stop
         }
@@ -584,7 +643,7 @@ function Set-UtilityShortcut {
     $shell = New-Object -ComObject WScript.Shell
     try {
         $link = $shell.CreateShortcut($path)
-        if ($Config.EnableStartupTask) {
+        if ($Config.EnableScheduledTask) {
             $link.TargetPath = "$env:SystemRoot\System32\schtasks.exe"
             $link.Arguments = '/Run /TN "LeenlaptopSchoonmaak"'
         } else {
@@ -865,7 +924,7 @@ function Invoke-LeenlaptopUtility {
             else {
                 try { Test-InstalledPackage $InstallPath; $report.Results += New-StepResult 'Pakket' 'Success' }
                 catch { $report.Results += New-StepResult 'Pakket' 'Failed' -Failed 1 -Detail 'Pakket ontbreekt, is gewijzigd of heeft een andere versie.' }
-                if ($config.EnableStartupTask) {
+                if ($config.EnableScheduledTask) {
                     $task = Get-ScheduledTask -TaskName $script:TaskName -ErrorAction SilentlyContinue
                     if (-not $task) { $report.Results += New-StepResult 'Geplande taak' 'Partial' -Detail 'Taak ontbreekt; installeer opnieuw.' }
                 }
@@ -875,6 +934,14 @@ function Invoke-LeenlaptopUtility {
         if (-not $user) { $user = Resolve-TargetUser $TargetUser $config.TargetUserSid }
         $config.TargetUserSid = $user.Sid
         Test-UtilityConfiguration $config
+        if ($Interactive) {
+            Show-InstallationConfiguration $config $user $loaded.Source $InstallPath
+            if (-not $WhatIfPreference -and -not (Confirm-InstallationConfiguration)) {
+                $report.Status = 'Cancelled'
+                $report.Results = @(New-StepResult 'Installatie' 'Skipped' -Detail 'Geannuleerd; niets gewijzigd.')
+                return $report
+            }
+        }
         if ($PSCmdlet.ShouldProcess($InstallPath, 'Pakket installeren, configuratie bewaren en voorzieningen instellen')) {
             if (-not (Test-Administrator)) { throw 'Installatie vereist administratorrechten.' }
             $legacyTaskName = ''

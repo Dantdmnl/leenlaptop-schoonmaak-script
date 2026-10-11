@@ -1,6 +1,6 @@
 # Leenlaptop Schoonmaak
 
-Hulpprogramma voor Windows waarmee u een leenaccount na gebruik lokaal opschoont. Versie **1.7.1**, uitgebracht op **11 oktober 2026**. Vereist Windows 10/11 en Windows PowerShell 5.1.
+Hulpprogramma voor Windows waarmee u een leenaccount na gebruik lokaal opschoont. Versie **1.7.2** is in voorbereiding. Vereist Windows 10/11 en Windows PowerShell 5.1.
 
 ## Gebruik
 
@@ -9,7 +9,7 @@ Hulpprogramma voor Windows waarmee u een leenaccount na gebruik lokaal opschoont
 1. Pak het volledige ZIP-archief uit in een map op de laptop of op een USB-stick. Laat alle bestanden bij elkaar staan; voer de installer niet rechtstreeks vanuit het ZIP-bestand uit.
 2. Zorg dat het leenaccount al een gebruikersprofiel op deze laptop heeft. Meld u zo nodig eerst eenmaal aan met dat account.
 3. Dubbelklik op `Install-LeenlaptopSchoonmaak.bat` en bevestig het Windows-beveiligingsvenster (UAC). De installer vraagt vooraf om administratorrechten. Een apart beheeraccount mag de installatie uitvoeren. Als u het verzoek annuleert, wordt niets geplaatst.
-4. Kies het leenaccount uit de genummerde lijst. Controleer de accountnaam en profielmap en bevestig met `J`. Met `0` annuleert u zonder iets te wijzigen.
+4. Kies het leenaccount uit de genummerde lijst. Controleer de accountnaam en profielmap en ga door met `J`. Bekijk vervolgens het configuratieoverzicht: bronbestand, installatiemap, opschoononderdelen, bewaartermijnen en automatische uitvoering. Bevestig pas daarna de installatie met `J`. Met `N` of `0` bij de laatste vraag annuleert u zonder iets te wijzigen.
 5. Controleer dat de installatie slaagt. Daarna kunt u de USB-stick verwijderen.
 
 De installatie kopieert de programmabestanden naar `C:\ProgramData\LeenlaptopSchoonmaak` en stelt de geplande taak en bureaubladsnelkoppeling in, tenzij deze in de configuratie zijn uitgeschakeld. De taak en snelkoppeling verwijzen naar de lokale installatie, niet naar de USB-stick. Installatie verwijdert geen gebruikersgegevens.
@@ -61,6 +61,10 @@ Voorbeeld van enkele instellingen, onderdeel van een volledig JSON-object:
 ```
 
 Ontbrekende sleutels krijgen hun standaardwaarde. Onbekende sleutels, ongeldige typen en niet ondersteunde schema's worden geweigerd. `-PrintConfig` schrijft de effectieve configuratie als JSON naar de console.
+
+`EnableScheduledTask` bepaalt of de geplande taak bestaat, ook voor handmatig starten via de snelkoppeling. `RunAtLogon` bepaalt of die taak automatisch opschoont bij aanmelden. Automatische uitvoering vereist een ingeschakelde geplande taak; de combinatie `RunAtLogon: true` en `EnableScheduledTask: false` is ongeldig. Beide instellingen vereisen herinstallatie om de taak bij te werken.
+
+De oude sleutel `EnableStartupTask` wordt bij het lezen omgezet naar `EnableScheduledTask`, met behoud van de waarde. Bij herinstallatie wordt alleen de nieuwe naam opgeslagen. Tegenstrijdige waarden voor beide sleutels worden geweigerd. Wilt u instellingen wijzigen na het bekijken van het installatieoverzicht, annuleer dan, pas de getoonde configuratiebron aan en start de installer opnieuw. Bij standaardinstellingen kunt u vooraf `config.example.json` opslaan als `config.json` naast de releasebestanden.
 
 | Onderdeel | Standaard |
 | --- | --- |
@@ -119,6 +123,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Invoke-Tests.ps1
 .\tools\New-ReleaseArchive.ps1
 ```
 
-De 50 Pester-tests gebruiken uitsluitend tijdelijke bestanden en gesimuleerde systeemacties, inclusief browserprofielen met testgegevens en het aanvragen van administratorrechten. De automatische Windows-controles omvatten syntaxcontrole, geselecteerde ScriptAnalyzer-regels, compilatie van de C#-helper en deze tests. Daarnaast controleert een integratietest op een tijdelijke Windows-machine van GitHub de profielinventarisatie, installatie, taakregistratie, toegangsrechten, snelkoppeling, opdrachtregel, rapportage en updates. Alle opschoonfuncties staan tijdens die integratietest uit. De test weigert uitvoering buiten GitHub Actions.
+De 60 Pester-tests gebruiken uitsluitend tijdelijke bestanden en gesimuleerde systeemacties, inclusief browserprofielen met testgegevens, het aanvragen van administratorrechten, configuratiemigratie en het installatieoverzicht. De automatische Windows-controles omvatten syntaxcontrole, geselecteerde ScriptAnalyzer-regels, compilatie van de C#-helper en deze tests. Daarnaast controleert een integratietest op een tijdelijke Windows-machine van GitHub de profielinventarisatie, installatie, taakregistratie, toegangsrechten, snelkoppeling, opdrachtregel, rapportage en updates. Alle opschoonfuncties staan tijdens die integratietest uit. De test weigert uitvoering buiten GitHub Actions.
 
 Het afsluiten van echte browsers, verwijderen van Wi-Fi-profielen en herstellen van de firewall zijn niet getest. Controleer deze functies en uw beheerconfiguratie met een tijdelijk testaccount voordat u het programma breed inzet. Op de ontwikkelcomputer worden geen echte gebruikersgegevens opgeschoond. Zie [VALIDATION.md](VALIDATION.md) voor de uitgevoerde controles en bronnen, [SERVICEDESK.md](SERVICEDESK.md) voor de acceptatietest en [AVG-COMPLIANCE.md](AVG-COMPLIANCE.md) voor de technische privacymaatregelen. De release bevat het volledige ZIP-archief en `SHA256SUMS.txt`.

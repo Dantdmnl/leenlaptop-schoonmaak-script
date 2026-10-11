@@ -1,12 +1,12 @@
 # Servicedeskhandleiding
 
-Leenlaptop Schoonmaak 1.7.1, 11 oktober 2026.
+Leenlaptop Schoonmaak 1.7.2, in voorbereiding.
 
 ## Installeren
 
 1. Pak het volledige ZIP-archief uit in een map op de laptop of op een USB-stick. Laat alle bestanden bij elkaar staan.
 2. Zorg dat het leenaccount al een gebruikersprofiel heeft. Meld u zo nodig eerst eenmaal aan met dit account.
-3. Dubbelklik op `Install-LeenlaptopSchoonmaak.bat`. Bevestig eerst het Windows-beveiligingsvenster (UAC), eventueel met een apart beheeraccount. Kies daarna het leenaccount uit de genummerde lijst en controleer de accountnaam en profielmap. Bevestig met `J`, kies opnieuw met `N` of annuleer met `0`.
+3. Dubbelklik op `Install-LeenlaptopSchoonmaak.bat`. Bevestig eerst het Windows-beveiligingsvenster (UAC), eventueel met een apart beheeraccount. Kies daarna het leenaccount en controleer de accountnaam en profielmap. Ga door met `J`, kies opnieuw met `N` of annuleer met `0`. Controleer vervolgens het configuratieoverzicht en bevestig de installatie met `J`. Bij deze laatste vraag annuleren `N` en `0` zonder wijzigingen.
 4. Controleer dat de status `Success` is en de exitcode `0`. Annuleren geeft ook exitcode `0`, maar de status `Cancelled`; dan is niets geplaatst.
 5. Verwijder de USB-stick zodra de installatie is geslaagd. Het programma staat nu lokaal in `C:\ProgramData\LeenlaptopSchoonmaak`; de taak en snelkoppeling hebben de stick niet meer nodig.
 6. Meld u aan met het doelaccount. Controleer eerst met `-Check` en bekijk daarna de geplande opschoning met `-Cleanup -WhatIf`.
@@ -45,6 +45,8 @@ Alleen beheerders mogen de programmabestanden en configuratie wijzigen. Het doel
 Wijzig als administrator `C:\ProgramData\LeenlaptopSchoonmaak\config.json`. Booleanwaarden zijn `true` of `false`, aantallen zijn gehele getallen en uitzonderingslijsten zijn JSON-arrays. Controleer wijzigingen met `-Check`.
 
 Wijzigingen aan opschooninstellingen gelden bij de volgende uitvoering. Instellingen voor snelkoppeling, geplande taak, doelaccount en uitvoeringstijd van de taak vereisen herinstallatie vanuit een uitgepakte release. `RunAtLogon` staat standaard uit. Inschakelen betekent gegevens verwijderen bij aanmelden; informeer gebruikers vooraf over dit gedrag.
+
+`EnableScheduledTask` schakelt de geplande taak in; `RunAtLogon` voegt automatisch starten bij aanmelden toe. Zonder geplande taak is automatisch starten ongeldig. De oude configuratiesleutel `EnableStartupTask` blijft leesbaar en wordt bij herinstallatie vervangen door `EnableScheduledTask`. Annuleer bij ongewenste instellingen het installatieoverzicht en wijzig het getoonde bronbestand voordat u opnieuw installeert.
 
 ## Problemen
 

@@ -23,7 +23,7 @@ $config = & (Get-Module LeenlaptopSchoonmaak) { Get-DefaultConfiguration }
 foreach ($key in @($config.Keys)) {
     if ($key -like 'Enable*') { $config[$key] = $false }
 }
-$config.EnableStartupTask = $true
+$config.EnableScheduledTask = $true
 $config.EnableShortcut = $true
 $config.RunAtLogon = $false
 $config | ConvertTo-Json -Depth 5 | Set-Content $configPath -Encoding UTF8
@@ -94,9 +94,13 @@ try {
 
     $saved = Get-Content (Join-Path $installPath 'config.json') -Raw | ConvertFrom-Json
     $saved.DownloadsMaxAgeDays = 19
-    $saved | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $installPath 'config.json') -Encoding UTF8
+    $oldSaved = $saved | Select-Object * -ExcludeProperty EnableScheduledTask
+    $oldSaved | Add-Member -MemberType NoteProperty -Name EnableStartupTask -Value $saved.EnableScheduledTask
+    $oldSaved | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $installPath 'config.json') -Encoding UTF8
     $result = Invoke-LeenlaptopUtility -Action Install -SourcePath $source -InstallPath $installPath -TargetUser $account
     if ($result.ExitCode -ne 0 -or $result.Config.DownloadsMaxAgeDays -ne 19) { throw 'Update bewaart bestaande configuratie niet.' }
+    $migrated = Get-Content (Join-Path $installPath 'config.json') -Raw | ConvertFrom-Json
+    if (-not $migrated.EnableScheduledTask -or $migrated.PSObject.Properties['EnableStartupTask']) { throw 'Oude taaksleutel is niet gemigreerd.' }
 
     # Test het vervangen van een handmatige taak door een logon-taak en weer terug.
     $saved.RunAtLogon = $true
@@ -105,7 +109,7 @@ try {
     if ($result.ExitCode -ne 0 -or @(Get-ScheduledTask -TaskName 'LeenlaptopSchoonmaak' | Select-Object -ExpandProperty Triggers).Count -ne 1) {
         throw 'Logon-trigger is niet geregistreerd.'
     }
-    $saved.EnableStartupTask = $false
+    $saved.EnableScheduledTask = $false
     $saved.RunAtLogon = $false
     $saved | ConvertTo-Json -Depth 5 | Set-Content $configPath -Encoding UTF8
     $result = Invoke-LeenlaptopUtility -Action Install -SourcePath $source -InstallPath $installPath -ConfigPath $configPath -TargetUser $account
