@@ -6,8 +6,8 @@ Leenlaptop Schoonmaak 1.7.3, in voorbereiding.
 
 1. Pak het volledige ZIP-archief uit in een map op de laptop of op een USB-stick. Laat alle bestanden bij elkaar staan.
 2. Zorg dat het leenaccount al een gebruikersprofiel heeft. Meld u zo nodig eerst eenmaal aan met dit account.
-3. Dubbelklik op `Install-LeenlaptopSchoonmaak.bat`. Bevestig eerst het Windows-beveiligingsvenster (UAC), eventueel met een apart beheeraccount. Kies daarna het leenaccount en controleer de accountnaam en profielmap. Ga door met `J`, kies opnieuw met `N` of annuleer met `0`. Controleer vervolgens het configuratieoverzicht en bevestig de installatie met `J`. Bij deze laatste vraag annuleren `N` en `0` zonder wijzigingen.
-4. Controleer dat de status `Success` is en de exitcode `0`. Annuleren geeft ook exitcode `0`, maar de status `Cancelled`; dan is niets geplaatst.
+3. Dubbelklik op `Install-LeenlaptopSchoonmaak.bat`. Bevestig eerst UAC, eventueel met een apart beheeraccount. Kies daarna het leenaccount, het te gebruiken configuratiebestand en controleer het instellingenoverzicht. De configuratiekeuze toont gevonden `config.json`-bestanden in de installatiemap en naast de installer. Annuleer met `0`, of bevestig na het overzicht de installatie met `J`. Bij de laatste vraag annuleren ook `N` en `0` zonder wijzigingen.
+4. Controleer dat het resultaat **Installatie geslaagd** is en de exitcode `0`. Annuleren geeft ook exitcode `0`, maar de melding **Geannuleerd; niets gewijzigd**; dan is niets geplaatst. Rechtstreeks gebruik via PowerShell toont hiervoor de statussen `Success` en `Cancelled`.
 5. Verwijder de USB-stick zodra de installatie is geslaagd. Het programma staat nu lokaal in `C:\ProgramData\LeenlaptopSchoonmaak`; de taak en snelkoppeling hebben de stick niet meer nodig.
 6. Meld u aan met het doelaccount. Controleer eerst met `-Check` en bekijk daarna de geplande opschoning met `-Cleanup -WhatIf`.
 

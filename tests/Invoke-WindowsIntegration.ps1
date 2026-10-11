@@ -107,6 +107,13 @@ try {
     if ($result.ExitCode -ne 0 -or $result.Config.DownloadsMaxAgeDays -ne 19) { throw 'Update bewaart bestaande configuratie niet.' }
     $migrated = Get-Content (Join-Path $installPath 'config.json') -Raw | ConvertFrom-Json
     if (-not $migrated.EnableScheduledTask -or $migrated.PSObject.Properties['EnableStartupTask']) { throw 'Oude taaksleutel is niet gemigreerd.' }
+    $sourceConfig = Join-Path $source 'config.json'
+    $saved.DownloadsMaxAgeDays = 3
+    $saved | ConvertTo-Json -Depth 5 | Set-Content $sourceConfig -Encoding UTF8
+    $choices = @(& (Get-Module LeenlaptopSchoonmaak) { param($sourcePath, $targetPath) Get-InstallationConfigurationChoices $sourcePath $targetPath } $source $installPath)
+    if ($choices.Count -ne 2) { throw 'Configuratiekeuze vindt niet beide locaties.' }
+    $selected = & (Get-Module LeenlaptopSchoonmaak) { param($sourcePath, $targetPath, $configFile) Read-UtilityConfiguration $sourcePath $targetPath $configFile } $source $installPath $sourceConfig
+    if ($selected.Config.DownloadsMaxAgeDays -ne 3 -or $selected.Source -ne $sourceConfig) { throw 'Gekozen bron krijgt geen voorrang op bestaande configuratie.' }
 
     # Test het vervangen van een handmatige taak door een logon-taak en weer terug.
     $saved.RunAtLogon = $true

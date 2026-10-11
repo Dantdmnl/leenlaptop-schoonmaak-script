@@ -5,7 +5,7 @@ Gecontroleerd op 11 oktober 2026.
 ## Geautomatiseerde controles
 
 - Syntaxcontrole voor PowerShell 5.1, geselecteerde ScriptAnalyzer-regels en compilatie van de C#-helper.
-- 64 Pester-tests met tijdelijke testbestanden en gesimuleerde systeemacties: UAC-verzoek en annuleren, veilige doorgifte van het bronpad, accountkeuze, profielinventarisatie, configuratiemigratie, taakvalidatie, gegroepeerd installatieoverzicht, definitieve bevestiging, installatie zonder voorbeeldbestand, herstel na mislukte updates, leeftijdsfilters, links, vergrendeling, status, bewaartermijnen en browseropslag met testprofielen.
+- 74 Pester-tests met tijdelijke testbestanden en gesimuleerde systeemacties: UAC-verzoek en annuleren, veilige doorgifte van het bronpad, accountkeuze, profielinventarisatie, configuratiekeuze op beide locaties, invoercontrole, annuleren, expliciet ConfigPath, migratie, taakvalidatie, gegroepeerd installatieoverzicht, definitieve bevestiging, installatie zonder voorbeeldbestand, herstel na mislukte updates, leeftijdsfilters, links, vergrendeling, status, bewaartermijnen en browseropslag met testprofielen.
 - Native WLAN-structuurafmetingen en Unicode-marshaling zonder WLAN-functies aan te roepen.
 - Integratietest op een tijdelijke Windows-machine van GitHub: inventarisatie van echte gebruikersprofielen, installatie, geplande taak, taakrechten, NTFS-rechten, snelkoppeling, opdrachtregel, rapportage, configuratiebehoud bij updates en beheer van taaktriggers. Alle opschoonfuncties staan uit. De test weigert uitvoering buiten GitHub Actions.
 
@@ -15,6 +15,8 @@ De integratietest controleert de ingestelde toegangsrechten. De test simuleert g
 
 | Onderdeel | Officiele bron | Controle |
 | --- | --- | --- |
+| JSON-configuratie | [Microsoft: ConvertFrom-Json (5.1)](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/convertfrom-json?view=powershell-5.1) | Geen JSON-commentaar in PowerShell 5.1; dubbele sleutels gebruiken de laatste waarde. Typevalidatie volgt na het lezen van het expliciet gekozen bestand |
+| Automatisch aanmelden | [Microsoft: Logon triggers](https://learn.microsoft.com/en-us/windows/win32/taskschd/starting-an-executable-when-a-user-logs-on), [Principal.LogonType](https://learn.microsoft.com/en-us/windows/win32/taskschd/principal-logontype) | Een gebruikersgebonden aanmeldtrigger staat los van het bestaan van de taak; een interactieve taak vereist een aangemelde gebruiker |
 | Administratorrechten | [Microsoft: Start-Process](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/start-process?view=powershell-5.1) | `RunAs` opent UAC; `Wait` en `PassThru` geven het procesresultaat door. Bronpaden worden als letterlijke waarden doorgegeven |
 | Accountkeuze | [Microsoft: Win32_UserProfile](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/legacy/ee886409(v=vs.85)) | SID, profielpad en onderscheid tussen gebruikers- en systeemprofielen; de gekozen SID wordt voor installatie opnieuw gecontroleerd |
 | Taakcontext en rechten | [Microsoft: Security Contexts for Tasks](https://learn.microsoft.com/en-us/windows/win32/taskschd/security-contexts-for-running-tasks) | Principal, interactieve context, hoogste bevoegdheden en afzonderlijke startrechten |
@@ -27,6 +29,8 @@ De integratietest controleert de ingestelde toegangsrechten. De test simuleert g
 | Omgeleide Edge-opslag | [Microsoft: UserDataDir](https://learn.microsoft.com/en-us/deployedge/microsoft-edge-browser-policies/userdatadir) | Beleid kan de opslaglocatie wijzigen; alleen de standaardlocatie wordt opgeschoond |
 
 ## Grenzen
+
+Voor 1.7.3 zijn JSON-gedrag, UAC (`RunAs`, procesresultaat en argumentdoorgifte) en het onderscheid tussen een geplande taak en aanmeldtrigger opnieuw gecontroleerd in de primaire Microsoft-documentatie. De configuratiekeuze verandert alleen de bron van de instellingen; de installatie blijft expliciete bevestiging en administratorrechten vereisen.
 
 Er zijn geen echte gebruikersgegevens op de ontwikkelcomputer verwijderd. Het afsluiten van echte browsers, opnieuw starten na opschoning, verwijderen van Wi-Fi-profielen en herstellen van de firewall zijn niet getest. Browserprofielen met testgegevens controleren het verwijderen van bestanden, niet het gedrag van een echte browser. Afwijkende browserlocaties, andere gebruikersprofielen en gegevens buiten de ingestelde opschoning worden niet opgeschoond.
 

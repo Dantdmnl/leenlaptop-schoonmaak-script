@@ -235,6 +235,90 @@ throw 'Mag nooit worden uitgevoerd'
         }
     }
 
+    Describe 'Configuratie kiezen' {
+        BeforeEach {
+            $caseRoot = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+            $source = Join-Path $caseRoot 'source'
+            $install = Join-Path $caseRoot 'LeenlaptopSchoonmaak'
+            New-Item $source, $install -ItemType Directory | Out-Null
+            '{"RunAtLogon":false,"DownloadsMaxAgeDays":19}' | Set-Content (Join-Path $install 'config.json')
+            '{"RunAtLogon":true,"DownloadsMaxAgeDays":3}' | Set-Content (Join-Path $source 'config.json')
+            Mock Write-Host {}
+        }
+        It 'vindt de configuratie op beide locaties met herkenbare namen' {
+            $choices = @(Get-InstallationConfigurationChoices $source $install)
+            $choices.Count | Should Be 2
+            $choices[0].Title | Should Be 'Bestaande installatie'
+            $choices[1].Path | Should Be (Join-Path $source 'config.json')
+        }
+        It 'toont hetzelfde pad niet dubbel' {
+            @(Get-InstallationConfigurationChoices $source $source).Count | Should Be 1
+        }
+        It 'gebruikt het gekozen bestand naast de installer in plaats van de bestaande configuratie' {
+            Mock Read-Host { '2' }
+            $loaded = Select-InstallationConfiguration $source $install
+            $loaded.Config.RunAtLogon | Should Be $true
+            $loaded.Config.DownloadsMaxAgeDays | Should Be 3
+            $loaded.Source | Should Be (Join-Path $source 'config.json')
+        }
+        It 'kan ook expliciet de bestaande configuratie kiezen' {
+            Mock Read-Host { '1' }
+            (Select-InstallationConfiguration $source $install).Config.DownloadsMaxAgeDays | Should Be 19
+        }
+        It 'weigert een ongeldig gekozen bestand zonder stilzwijgend het andere te gebruiken' {
+            'invalid JSON' | Set-Content (Join-Path $source 'config.json')
+            Mock Read-Host { '2' }
+            { Select-InstallationConfiguration $source $install } | Should Throw
+        }
+        It 'vraagt ook bij een enkel bestand om een keuze en weigert ongeldige invoer' {
+            Remove-Item -LiteralPath (Join-Path $source 'config.json')
+            $script:answers = New-Object 'System.Collections.Generic.Queue[string]'
+            foreach ($answer in @('', '2', 'neen', '1')) { $script:answers.Enqueue($answer) }
+            Mock Read-Host { $script:answers.Dequeue() }
+            (Select-InstallationConfiguration $source $install).Config.DownloadsMaxAgeDays | Should Be 19
+            Assert-MockCalled Read-Host -Times 4 -Exactly -Scope It
+        }
+        It 'annuleert zonder een configuratie in te lezen' {
+            Mock Read-Host { '0' }
+            Mock Read-UtilityConfiguration { throw 'Mag niet worden aangeroepen' }
+            (Select-InstallationConfiguration $source $install) | Should Be $null
+            Assert-MockCalled Read-UtilityConfiguration -Times 0 -Exactly -Scope It
+        }
+        It 'behoudt migratie en defaults als beide bestanden ontbreken' {
+            Mock Get-InstallationConfigurationChoices {}
+            Mock Read-Host { throw 'Mag niet worden aangeroepen' }
+            Mock Read-UtilityConfiguration { @{ Config = (Get-DefaultConfiguration); Source = 'defaults' } }
+            (Select-InstallationConfiguration $source $install 'legacy-profile').Source | Should Be 'defaults'
+            Assert-MockCalled Read-UtilityConfiguration -Times 1 -Exactly -Scope It -ParameterFilter { $LegacyProfilePath -eq 'legacy-profile' -and -not $ConfigPath }
+        }
+    }
+
+    Describe 'Configuratiekeuze in de installer' {
+        BeforeEach {
+            Mock Test-Administrator { $true }
+            Mock Select-TargetUser { @{ Sid = 'S-1-5-21-1-2-3-1001'; Account = 'leenaccount'; ProfilePath = $TestDrive } }
+            Mock Install-UtilityPackage { throw 'Mag niet worden aangeroepen' }
+            Mock Enter-UtilityLock { throw 'Mag niet worden aangeroepen' }
+        }
+        It 'annuleert de installatie wanneer de configuratiekeuze wordt geannuleerd' {
+            Mock Select-InstallationConfiguration { $null }
+            $result = Invoke-LeenlaptopUtility -Action Install -Interactive -InstallPath $TestDrive
+            $result.Status | Should Be 'Cancelled'
+            $result.ExitCode | Should Be 0
+            Assert-MockCalled Install-UtilityPackage -Times 0 -Exactly -Scope It
+            Assert-MockCalled Enter-UtilityLock -Times 0 -Exactly -Scope It
+        }
+        It 'gebruikt een expliciet ConfigPath zonder configuratiekeuze' {
+            Mock Select-InstallationConfiguration { throw 'Mag niet worden aangeroepen' }
+            Mock Read-UtilityConfiguration { @{ Config = (Get-DefaultConfiguration); Source = $ConfigPath } }
+            Mock Show-InstallationConfiguration {}
+            Mock Confirm-InstallationConfiguration { $false }
+            $result = Invoke-LeenlaptopUtility -Action Install -Interactive -InstallPath $TestDrive -ConfigPath 'explicit.json'
+            $result.ConfigSource | Should Be 'explicit.json'
+            Assert-MockCalled Select-InstallationConfiguration -Times 0 -Exactly -Scope It
+        }
+    }
+
     Describe 'Installatieoverzicht en bevestiging' {
         BeforeEach {
             Mock Write-Host {}
@@ -265,7 +349,7 @@ throw 'Mag nooit worden uitgevoerd'
         }
         It 'maakt duidelijk wanneer de bestaande configuratie voorrang heeft' {
             Show-InstallationConfiguration (Get-DefaultConfiguration) @{ Account = 'leenaccount'; ProfilePath = $TestDrive } (Join-Path $TestDrive 'config.json') $TestDrive
-            Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -like '*Bestaande instellingen blijven behouden*' }
+            Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -like '*Gekozen bron: bestaande installatie*' }
         }
         It 'toont de geladen configuratie voordat definitieve toestemming wordt gevraagd' {
             $script:overviewShown = $false

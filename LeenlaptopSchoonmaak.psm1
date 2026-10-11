@@ -130,6 +130,48 @@ function Read-UtilityConfiguration {
     return @{ Config = (Get-DefaultConfiguration); Source = 'defaults'; Legacy = $false }
 }
 
+function Get-InstallationConfigurationChoices {
+    param([string]$SourcePath, [string]$InstallPath)
+    $seen = @{}
+    foreach ($location in @(
+        @{ Title = 'Bestaande installatie'; Path = (Join-Path $InstallPath 'config.json') },
+        @{ Title = 'Naast de installer (laptop of USB)'; Path = (Join-Path $SourcePath 'config.json') }
+    )) {
+        $path = [IO.Path]::GetFullPath($location.Path)
+        if ($seen.ContainsKey($path)) { continue }
+        $seen[$path] = $true
+        if (Test-Path -LiteralPath $path -PathType Leaf) {
+            [pscustomobject]@{ Title = $location.Title; Path = $path }
+        }
+    }
+}
+
+function Select-InstallationConfiguration {
+    param([string]$SourcePath, [string]$InstallPath, [string]$LegacyProfilePath)
+    Write-InstallerHeading 'Stap 2 van 4 - Configuratie kiezen'
+    $choices = @(Get-InstallationConfigurationChoices $SourcePath $InstallPath)
+    if ($choices.Count -eq 0) {
+        Write-Host '  Geen config.json gevonden. Oude instellingen worden gemigreerd, anders gelden de standaardinstellingen.' -ForegroundColor Gray
+        return (Read-UtilityConfiguration $SourcePath $InstallPath '' $LegacyProfilePath)
+    }
+    Write-Host '  Kies welke instellingen voor deze installatie moeten worden gebruikt.' -ForegroundColor Gray
+    Write-Host '  De gekozen configuratie wordt lokaal opgeslagen; de accountkeuze blijft leidend.' -ForegroundColor Gray
+    for ($index = 0; $index -lt $choices.Count; $index++) {
+        Write-Host ('  [{0}] {1}' -f ($index + 1), $choices[$index].Title) -ForegroundColor White
+        Write-Host ('      ' + $choices[$index].Path) -ForegroundColor DarkGray
+    }
+    while ($true) {
+        $answer = Read-Host 'Configuratienummer (0 = annuleren)'
+        if ($answer -eq '0') { return $null }
+        $number = 0
+        if (-not [int]::TryParse($answer, [ref]$number) -or $number -lt 1 -or $number -gt $choices.Count) {
+            Write-Host '  Kies een nummer uit de lijst.' -ForegroundColor Yellow
+            continue
+        }
+        return (Read-UtilityConfiguration $SourcePath $InstallPath $choices[$number - 1].Path $LegacyProfilePath)
+    }
+}
+
 function Get-CurrentUserSid {
     [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 }
@@ -183,7 +225,7 @@ function Select-TargetUser {
     $users = @(Get-AvailableTargetUsers | Sort-Object Account, Sid)
     if ($users.Count -eq 0) { throw 'Geen beschikbare gebruikersprofielen gevonden. Log eerst eenmaal in met het leenaccount.' }
     while ($true) {
-        Write-InstallerHeading 'Stap 1 van 3 - Leenaccount kiezen'
+        Write-InstallerHeading 'Stap 1 van 4 - Leenaccount kiezen'
         Write-Host '  Kies het account waarvan gegevens mogen worden opgeschoond.' -ForegroundColor Gray
         for ($index = 0; $index -lt $users.Count; $index++) {
             Write-Host ("  [{0}] {1}" -f ($index + 1), $users[$index].Account) -ForegroundColor White
@@ -209,14 +251,14 @@ function Select-TargetUser {
 
 function Show-InstallationConfiguration {
     param([System.Collections.IDictionary]$Config, [System.Collections.IDictionary]$User, [string]$ConfigSource, [string]$InstallPath)
-    Write-InstallerHeading 'Stap 2 van 3 - Instellingen controleren'
+    Write-InstallerHeading 'Stap 3 van 4 - Instellingen controleren'
     Write-InstallerSetting 'Doelaccount' $User.Account White
     Write-InstallerSetting 'Profielmap' $User.ProfilePath
     Write-InstallerSetting 'Installatiemap' $InstallPath
     $sourceLabel = if ($ConfigSource -eq 'defaults') { 'standaardinstellingen' } else { $ConfigSource }
     Write-InstallerSetting 'Configuratiebron' $sourceLabel Cyan
     if ($ConfigSource -eq (Join-Path $InstallPath 'config.json')) {
-        Write-Host '  Bestaande instellingen blijven behouden; bestanden naast de installer krijgen geen voorrang.' -ForegroundColor DarkGray
+        Write-Host '  Gekozen bron: bestaande installatie. Deze instellingen blijven behouden.' -ForegroundColor DarkGray
     }
     $sections = @{
         EnableScheduledTask = 'UITVOERING'; EnableBrowserCleanup = 'BROWSERS'
@@ -278,7 +320,7 @@ function Show-InstallationConfiguration {
 }
 
 function Confirm-InstallationConfiguration {
-    Write-InstallerHeading 'Stap 3 van 3 - Installatie bevestigen'
+    Write-InstallerHeading 'Stap 4 van 4 - Installatie bevestigen'
     while ($true) {
         $answer = Read-Host 'Installeren met deze instellingen? (J = installeren, N of 0 = annuleren)'
         if ($answer -ieq 'J') { return $true }
@@ -967,7 +1009,15 @@ function Invoke-LeenlaptopUtility {
         $user = Resolve-TargetUser $TargetUser ''
         $legacyProfilePath = $user.ProfilePath
     }
-    $loaded = Read-UtilityConfiguration $SourcePath $InstallPath $ConfigPath $legacyProfilePath
+    if ($Interactive -and -not $ConfigPath) {
+        $loaded = Select-InstallationConfiguration $SourcePath $InstallPath $legacyProfilePath
+        if (-not $loaded) {
+            return [pscustomobject]@{
+                Version = $script:UtilityVersion; Action = $Action; Status = 'Cancelled'; ExitCode = 0
+                ConfigSource = ''; Config = $null; Results = @(New-StepResult 'Installatie' 'Skipped' -Detail 'Geannuleerd; niets gewijzigd.')
+            }
+        }
+    } else { $loaded = Read-UtilityConfiguration $SourcePath $InstallPath $ConfigPath $legacyProfilePath }
     $config = $loaded.Config
     $results = @(); $lock = $null
     $report = [pscustomobject]@{

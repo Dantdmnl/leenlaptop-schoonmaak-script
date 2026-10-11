@@ -9,7 +9,7 @@ Hulpprogramma voor Windows waarmee u een leenaccount na gebruik lokaal opschoont
 1. Pak het volledige ZIP-archief uit in een map op de laptop of op een USB-stick. Laat alle bestanden bij elkaar staan; voer de installer niet rechtstreeks vanuit het ZIP-bestand uit.
 2. Zorg dat het leenaccount al een gebruikersprofiel op deze laptop heeft. Meld u zo nodig eerst eenmaal aan met dat account.
 3. Dubbelklik op `Install-LeenlaptopSchoonmaak.bat` en bevestig het Windows-beveiligingsvenster (UAC). De installer vraagt vooraf om administratorrechten. Een apart beheeraccount mag de installatie uitvoeren. Als u het verzoek annuleert, wordt niets geplaatst.
-4. Kies het leenaccount uit de genummerde lijst. Controleer de accountnaam en profielmap en ga door met `J`. Bekijk vervolgens het configuratieoverzicht: bronbestand, installatiemap, opschoononderdelen, bewaartermijnen en automatische uitvoering. Bevestig pas daarna de installatie met `J`. Met `N` of `0` bij de laatste vraag annuleert u zonder iets te wijzigen.
+4. Kies het leenaccount en controleer de accountnaam en profielmap. Kies daarna welk gevonden `config.json` u wilt gebruiken: de bestaande installatie of het bestand naast de installer. Bekijk vervolgens het instellingenoverzicht en bevestig pas daarna de installatie met `J`. Met `0` annuleert u de configuratiekeuze; met `N` of `0` annuleert u de laatste bevestiging zonder iets te wijzigen.
 5. Controleer dat de installatie slaagt. Daarna kunt u de USB-stick verwijderen.
 
 De installatie kopieert de programmabestanden naar `C:\ProgramData\LeenlaptopSchoonmaak` en stelt de geplande taak en bureaubladsnelkoppeling in, tenzij deze in de configuratie zijn uitgeschakeld. De taak en snelkoppeling verwijzen naar de lokale installatie, niet naar de USB-stick. Installatie verwijdert geen gebruikersgegevens.
@@ -46,9 +46,11 @@ Browseropschoning omvat de standaardopslaglocaties van Edge, Chrome en Firefox, 
 
 Instellingen staan na installatie in `C:\ProgramData\LeenlaptopSchoonmaak\config.json`. Alleen beheerders kunnen dit bestand en de programmabestanden wijzigen. Het doelaccount heeft alleen schrijftoegang tot de statusmap.
 
-Voor een eerste installatie kunt u `config.example.json` kopieren of hernoemen naar `config.json` naast de releasebestanden. Het voorbeeldbestand is vanaf 1.7.3 niet nodig voor installatie of uitvoering; het blijft wel beschikbaar in het releasearchief. Bij updates krijgt de configuratie van de bestaande installatie voorrang. Met `-ConfigPath` kiest u een ander JSON-bestand. Als dit bestand ontbreekt of ongeldig is, stopt de uitvoering.
+Voor een eerste installatie kunt u een kopie van `config.example.json` opslaan als `config.json`, of het voorbeeldbestand hernoemen. Het voorbeeldbestand is vanaf 1.7.3 niet nodig voor installatie of uitvoering; het blijft wel beschikbaar in het releasearchief. De interactieve installer scant `config.json` in de installatiemap en naast de installer, ook op een USB-stick. U kiest zelf welk gevonden bestand wordt gebruikt, ook als er maar een is. Als geen bestand wordt gevonden, worden oude instellingen gemigreerd of de standaardinstellingen gebruikt.
 
-De installer gebruikt drie stappen: account kiezen, instellingen controleren en installatie bevestigen. Het overzicht groepeert uitvoering, browsers, netwerk, bestanden en beheer. Bij bestandsopschoning staat de leeftijdsgrens naast de map. Kleuren ondersteunen de tekst: koppen en informatie zijn cyaan, uitgeschakelde opties grijs, waarschuwingen geel en een geslaagde installatie groen. Elke toestand is ook zonder kleur leesbaar.
+Zonder `-Interactive` krijgt de bestaande configuratie voorrang op het bestand naast het programma. Met `-ConfigPath` kiest u expliciet een JSON-bestand en slaat u de configuratiekeuze over. Een ontbrekend of ongeldig gekozen bestand stopt de uitvoering; er wordt niet op een ander bestand teruggevallen. De gekozen instellingen worden na bevestiging lokaal opgeslagen. Het gekozen doelaccount vervangt daarbij de SID uit het configuratiebestand.
+
+De installer gebruikt vier stappen: account kiezen, configuratie kiezen, instellingen controleren en installatie bevestigen. Het overzicht groepeert uitvoering, browsers, netwerk, bestanden en beheer. Bij bestandsopschoning staat de leeftijdsgrens naast de map. Kleuren ondersteunen de tekst: koppen en informatie zijn cyaan, uitgeschakelde opties grijs, waarschuwingen geel en een geslaagde installatie groen. Elke toestand is ook zonder kleur leesbaar.
 
 Voorbeeld van enkele instellingen, onderdeel van een volledig JSON-object:
 
@@ -63,6 +65,8 @@ Voorbeeld van enkele instellingen, onderdeel van een volledig JSON-object:
 ```
 
 Ontbrekende sleutels krijgen hun standaardwaarde. Onbekende sleutels, ongeldige typen en niet ondersteunde schema's worden geweigerd. `-PrintConfig` schrijft de effectieve configuratie als JSON naar de console.
+
+Gebruik JSON zonder commentaar en vermeld iedere sleutel eenmaal. Windows PowerShell 5.1 weigert commentaar; bij dubbele sleutels gebruikt de JSON-parser de laatste waarde. Controleer daarom het getoonde instellingenoverzicht voordat u installeert.
 
 `EnableScheduledTask` bepaalt of de geplande taak bestaat, ook voor handmatig starten via de snelkoppeling. `RunAtLogon` bepaalt of die taak automatisch opschoont bij aanmelden. Automatische uitvoering vereist een ingeschakelde geplande taak; de combinatie `RunAtLogon: true` en `EnableScheduledTask: false` is ongeldig. Beide instellingen vereisen herinstallatie om de taak bij te werken.
 
@@ -110,7 +114,7 @@ Een vergrendelingsbestand voorkomt dat installatie en opschoning tegelijk worden
 
 ## Updates en migratie
 
-Installeer een update vanuit een aparte map met de uitgepakte releasebestanden. Dat mag ook een map op een USB-stick zijn. Bestaande JSON-instellingen blijven behouden. Bij versies 1.5/1.6 leest het programma bekende instellingen met vaste waarden uit het oude script, zonder dat script uit te voeren. Voor instellingen die door code worden berekend, moet u zelf een JSON-configuratie aanleveren. Automatische opschoning bij aanmelden wordt bij deze migratie uitgeschakeld.
+Installeer een update vanuit een aparte map met de uitgepakte releasebestanden. Dat mag ook een map op een USB-stick zijn. Kies de bestaande configuratie om uw instellingen te behouden, of kies bewust het bestand naast de installer om andere instellingen over te nemen. Bij gebruik zonder vragen blijft de bestaande configuratie leidend. Bij versies 1.5/1.6 leest het programma bekende instellingen met vaste waarden uit het oude script, zonder dat script uit te voeren. Voor instellingen die door code worden berekend, moet u zelf een JSON-configuratie aanleveren. Automatische opschoning bij aanmelden wordt bij deze migratie uitgeschakeld.
 
 De installatie maakt back-ups van bestaande programmabestanden, de configuratie, de taak en de openbare snelkoppeling. Nieuwe bestanden worden eerst voorbereid en met SHA256 gecontroleerd. Na een geslaagde installatie worden de oude taak `Opstart-Script` en het oude script in de huidige installatiemap verwijderd. Bij een mislukte update worden de vorige bestanden en taak teruggezet. De back-ups staan in `backups`.
 
@@ -125,6 +129,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Invoke-Tests.ps1
 .\tools\New-ReleaseArchive.ps1
 ```
 
-De 64 Pester-tests gebruiken uitsluitend tijdelijke bestanden en gesimuleerde systeemacties, inclusief browserprofielen met testgegevens, het aanvragen van administratorrechten, configuratiemigratie en het installatieoverzicht. De automatische Windows-controles omvatten syntaxcontrole, geselecteerde ScriptAnalyzer-regels, compilatie van de C#-helper en deze tests. Daarnaast controleert een integratietest op een tijdelijke Windows-machine van GitHub de profielinventarisatie, installatie zonder voorbeeldbestand, taakregistratie, toegangsrechten, snelkoppeling, opdrachtregel, rapportage en updates. Alle opschoonfuncties staan tijdens die integratietest uit. De test weigert uitvoering buiten GitHub Actions.
+De 74 Pester-tests gebruiken uitsluitend tijdelijke bestanden en gesimuleerde systeemacties, inclusief browserprofielen met testgegevens, het aanvragen van administratorrechten, configuratiekeuze, migratie en het installatieoverzicht. De automatische Windows-controles omvatten syntaxcontrole, geselecteerde ScriptAnalyzer-regels, compilatie van de C#-helper en deze tests. Daarnaast controleert een integratietest op een tijdelijke Windows-machine van GitHub de profielinventarisatie, configuratiebronnen, installatie zonder voorbeeldbestand, taakregistratie, toegangsrechten, snelkoppeling, opdrachtregel, rapportage en updates. Alle opschoonfuncties staan tijdens die integratietest uit. De test weigert uitvoering buiten GitHub Actions.
 
 Het afsluiten van echte browsers, verwijderen van Wi-Fi-profielen en herstellen van de firewall zijn niet getest. Controleer deze functies en uw beheerconfiguratie met een tijdelijk testaccount voordat u het programma breed inzet. Op de ontwikkelcomputer worden geen echte gebruikersgegevens opgeschoond. Zie [VALIDATION.md](VALIDATION.md) voor de uitgevoerde controles en bronnen, [SERVICEDESK.md](SERVICEDESK.md) voor de acceptatietest en [AVG-COMPLIANCE.md](AVG-COMPLIANCE.md) voor de technische privacymaatregelen. De release bevat het volledige ZIP-archief en `SHA256SUMS.txt`.
