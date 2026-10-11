@@ -17,6 +17,7 @@ param(
     [Parameter(ParameterSetName = 'Check')][switch]$Check,
     [Parameter(ParameterSetName = 'Config', Mandatory)][switch]$PrintConfig,
     [Parameter(ParameterSetName = 'Install')][string]$TargetUser,
+    [Parameter(ParameterSetName = 'Install')][switch]$Interactive,
     [string]$ConfigPath,
     [string]$InstallPath = "$env:ProgramData\LeenlaptopSchoonmaak"
 )
@@ -30,7 +31,7 @@ try {
     if ($PrintConfig) { $action = 'Config' }
     $arguments = @{
         Action = $action; SourcePath = $PSScriptRoot; InstallPath = $InstallPath
-        ConfigPath = $ConfigPath; TargetUser = $TargetUser
+        ConfigPath = $ConfigPath; TargetUser = $TargetUser; Interactive = $Interactive
     }
     if ($WhatIfPreference) { $arguments.WhatIf = $true }
     if ($PSBoundParameters.ContainsKey('Confirm')) { $arguments.Confirm = $PSBoundParameters.Confirm }

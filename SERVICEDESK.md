@@ -1,14 +1,15 @@
 # Servicedeskhandleiding
 
-Leenlaptop Schoonmaak 1.7.0, 10 oktober 2026.
+Leenlaptop Schoonmaak 1.7.1, 11 oktober 2026.
 
 ## Installeren
 
-1. Pak het volledige releasearchief uit in een tijdelijke map.
-2. Controleer welk leenaccount moet worden opgeschoond en log er eenmaal mee in.
-3. Start de installer als administrator en geef het doelaccount op, bijvoorbeeld `LAPTOP\leenaccount`.
-4. Controleer dat de installatie eindigt met exitcode 0.
-5. Log in als het doelaccount. Controleer eerst met `-Check` en bekijk daarna `-Cleanup -WhatIf`.
+1. Pak het volledige ZIP-archief uit in een map op de laptop of op een USB-stick. Laat alle bestanden bij elkaar staan.
+2. Zorg dat het leenaccount al een gebruikersprofiel heeft. Meld u zo nodig eerst eenmaal aan met dit account.
+3. Start `Install-LeenlaptopSchoonmaak.bat` via **Als administrator uitvoeren**. Kies het leenaccount uit de genummerde lijst en controleer de accountnaam en profielmap. Bevestig met `J`, kies opnieuw met `N` of annuleer met `0`.
+4. Controleer dat de status `Success` is en de exitcode `0`. Annuleren geeft ook exitcode `0`, maar de status `Cancelled`; dan is niets geplaatst.
+5. Verwijder de USB-stick zodra de installatie is geslaagd. Het programma staat nu lokaal in `C:\ProgramData\LeenlaptopSchoonmaak`; de taak en snelkoppeling hebben de stick niet meer nodig.
+6. Meld u aan met het doelaccount. Controleer eerst met `-Check` en bekijk daarna de geplande opschoning met `-Cleanup -WhatIf`.
 
 ```powershell
 $utility = 'C:\ProgramData\LeenlaptopSchoonmaak\LeenlaptopSchoonmaak.ps1'
@@ -35,9 +36,9 @@ Exitcode 0 is geslaagd, 1 is mislukt en 2 is gedeeltelijk geslaagd. `Planned` be
 
 ## Account en rechten
 
-De installatie koppelt de taak aan de SID van het gekozen leenaccount en geeft het expliciet lees- en startrechten op die taak. Een apart beheeraccount mag installeren; opschonen als dat beheeraccount wordt geweigerd. Een standaardaccount kan zijn eigen bestanden opschonen, maar krijgt via de taak geen extra administratorrechten. Wi-Fi en firewallreset vereisen wel die rechten en leveren anders een gedeeltelijke status op.
+De installatie koppelt de taak aan de SID van het gekozen leenaccount. Dat account mag de taak lezen en starten, maar niet wijzigen. Een apart beheeraccount mag installeren; opschonen vanuit dat account wordt geweigerd. Een standaardaccount kan zijn eigen bestanden opschonen, maar krijgt via de taak geen extra administratorrechten. Het verwijderen van Wi-Fi-profielen en herstellen van de firewall vereisen die rechten wel en leveren anders een gedeeltelijk resultaat op.
 
-De programmabestanden en configuratie kunnen alleen door beheerders worden gewijzigd. De doelgebruiker kan de statusmap beschrijven. Statusbestanden zijn daarom geen fraudebestendige auditregistratie.
+Alleen beheerders mogen de programmabestanden en configuratie wijzigen. Het doelaccount heeft schrijftoegang tot de statusmap. Statusbestanden zijn daarom geen onafhankelijk bewijs van de uitvoering.
 
 ## Instellingen wijzigen
 
@@ -50,28 +51,30 @@ Wijzigingen aan opschooninstellingen gelden bij de volgende uitvoering. Instelli
 | Probleem | Actie |
 | --- | --- |
 | Ander account dan doelaccount | Meld het doelaccount aan; gebruik een beheeraccount alleen voor installatie |
-| Gedeeltelijk resultaat | Controleer stapresultaten, benodigde rechten, locks en overgeslagen links |
+| Leenaccount ontbreekt in de lijst | Meld u eerst eenmaal aan met dit account; controleer of het account nog bestaat en het profiel lokaal beschikbaar is |
+| Gedeeltelijk resultaat | Controleer resultaten per stap, benodigde rechten, vergrendelde bestanden en overgeslagen links |
 | Gewijzigd of onvolledig pakket | Herinstalleer vanuit het volledige releasearchief |
-| Omgeleide gebruikersmap | Controleer de opslaglocatie; de utility weigert locaties buiten het lokale profiel en bekende OneDrive-mappen |
-| Utility al actief | Wacht op de bestaande uitvoering; verwijder de lock niet tijdens gebruik |
+| Omgeleide gebruikersmap | Controleer de opslaglocatie; het programma weigert locaties buiten het lokale profiel en bekende OneDrive-mappen |
+| Programma al actief | Wacht tot de bestaande uitvoering klaar is; verwijder het vergrendelingsbestand niet tijdens gebruik |
 | Taak start niet | Controleer dat het doelaccount is aangemeld en de taak aanwezig is |
-| Tijdslimiet bereikt | Onderzoek de omvang en locks; verhoog daarna eventueel de limiet en werk de taak bij |
-| Geen nieuw rapport | Controleer consolefout, taskresultaat en schrijftoegang; een oud rapport hoort niet bij de huidige poging |
+| Tijdslimiet bereikt | Controleer de hoeveelheid gegevens en vergrendelde bestanden; verhoog zo nodig de limiet en werk de taak bij |
+| Geen nieuw rapport | Controleer de foutmelding, het taakresultaat en de schrijftoegang; een oud rapport hoort niet bij de huidige poging |
 
-Bij een mislukte installatie worden bestanden en taak uit de backup hersteld. Als ook herstel faalt, blijft de backup in `backups` staan. Bewaar de foutmelding en herstel eerst op een testapparaat. Kopieer niet zomaar losse programmabestanden naar de installatiemap: de manifestcontrole zal dan falen.
+Bij een mislukte installatie worden de bestanden en taak uit de back-up hersteld. Als ook dat herstel mislukt, blijft de back-up in `backups` staan. Bewaar de foutmelding en probeer herstel eerst op een testapparaat. Plaats niet zomaar losse programmabestanden in de installatiemap: daardoor mislukt de controle aan de hand van het manifest.
 
-## Acceptatietest op een wegwerpaccount
+## Acceptatietest met een tijdelijk testaccount
 
 Gebruik een Windows-VM of testlaptop met gegevens die verwijderd mogen worden.
 
-- Installeer met een apart beheeraccount voor een aangemeld testaccount. Controleer taakprincipal, ACL's en snelkoppeling.
-- Controleer dat installatie, gewone start en `-WhatIf` geen browserdata of testbestanden verwijderen.
-- Maak meerdere browserprofielen met tijdelijke geschiedenis, opgeslagen aanmeldingen en bladwijzers. Controleer de volledige lokale browseropslag na cleanup.
+- Installeer vanaf een USB-stick met een apart beheeraccount voor het testaccount. Controleer de accountkeuze, taakcontext, toegangsrechten en snelkoppeling. Verwijder de stick en controleer de lokale installatie.
+- Annuleer de accountkeuze en controleer dat de installatie ongewijzigd blijft.
+- Controleer dat installatie, starten zonder argumenten en `-WhatIf` geen browsergegevens of testbestanden verwijderen.
+- Maak meerdere browserprofielen met testgeschiedenis, opgeslagen aanmeldingen en bladwijzers. Controleer de volledige lokale browseropslag na opschoning.
 - Plaats oude en recente bestanden in Downloads, inclusief een oude map met een recent bestand. Alleen de oude bestanden mogen verdwijnen.
 - Controleer dat een standaardaccount gedeeltelijk resultaat krijgt voor ingeschakelde beheeracties.
 - Controleer op een geschikte testconfiguratie Wi-Fi-uitzonderingen en firewallreset.
-- Upgrade vanaf 1.6.3 met afwijkende instellingen. Controleer behoud van configuratie, backups en verwijdering van de oude taak na succesvolle installatie.
-- Start twee uitvoeringen tegelijk en controleer lock en status.
-- Test eventueel automatisch aanmelden pas nadat handmatige opschoning is goedgekeurd.
+- Werk versie 1.6.3 met afwijkende instellingen bij. Controleer dat de configuratie behouden blijft, back-ups worden gemaakt en de oude taak pas na een geslaagde installatie wordt verwijderd.
+- Start twee uitvoeringen tegelijk en controleer de vergrendeling en status.
+- Test automatische opschoning bij aanmelden pas nadat handmatige opschoning is goedgekeurd.
 
-Installatie, taakregistratie, bestandsrechten en updates worden op de tijdelijke Windows-runner van GitHub getest. De volledige acceptatietest met live browsers, Wi-Fi en firewall is niet uitgevoerd en blijft een controle voor de eigen beheeromgeving. Geef bij escalatie de versie, actie, exitcode en laatste rapport mee; deel de configuratie alleen wanneer de Wi-Fi-uitzonderingen en doelaccountinformatie nodig zijn.
+Installatie, taakregistratie, bestandsrechten en updates worden op een tijdelijke Windows-machine van GitHub getest. De volledige acceptatietest met echte browsers, Wi-Fi en firewall is niet uitgevoerd en moet in de eigen beheeromgeving plaatsvinden. Vermeld bij een ondersteuningsverzoek de versie, actie en exitcode en voeg het laatste rapport toe. Deel de configuratie alleen als de Wi-Fi-uitzonderingen en accountgegevens nodig zijn.

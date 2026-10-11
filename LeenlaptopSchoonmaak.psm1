@@ -1,6 +1,6 @@
 #requires -Version 5.1
 Set-StrictMode -Version 2.0
-$script:UtilityVersion = '1.7.0'
+$script:UtilityVersion = '1.7.1'
 $script:Deadline = $null
 $script:TaskName = 'LeenlaptopSchoonmaak'
 $script:PackageFiles = @('LeenlaptopSchoonmaak.ps1', 'LeenlaptopSchoonmaak.psm1', 'config.example.json', 'WlanProfiles.cs')
@@ -141,6 +141,45 @@ function Resolve-TargetUser {
     $profilePath = [Environment]::ExpandEnvironmentVariables($targetProfileRecord.ProfileImagePath)
     if (-not (Test-Path -LiteralPath $profilePath -PathType Container)) { throw 'Doelaccount heeft geen beschikbaar lokaal profiel. Log eerst eenmaal in.' }
     return @{ Sid = $Sid; Account = $accountName; ProfilePath = $profilePath }
+}
+
+function Get-AvailableTargetUsers {
+    foreach ($record in Get-CimInstance -ClassName Win32_UserProfile -ErrorAction Stop) {
+        if ($record.Special -or $record.SID -notmatch '^S-1-(5-21|12-1)-\d+-\d+-\d+-\d+$') { continue }
+        try {
+            $user = Resolve-TargetUser '' $record.SID
+            [pscustomobject]@{ Sid = $user.Sid; Account = $user.Account; ProfilePath = $user.ProfilePath }
+        } catch {
+            Write-Warning "Profiel '$($record.LocalPath)' is niet beschikbaar: $($_.Exception.Message)"
+        }
+    }
+}
+
+function Select-TargetUser {
+    $users = @(Get-AvailableTargetUsers | Sort-Object Account, Sid)
+    if ($users.Count -eq 0) { throw 'Geen beschikbare gebruikersprofielen gevonden. Log eerst eenmaal in met het leenaccount.' }
+    while ($true) {
+        Write-Host ''
+        Write-Host 'Kies het leenaccount waarvoor het programma wordt ingesteld.'
+        for ($index = 0; $index -lt $users.Count; $index++) {
+            Write-Host ("[{0}] {1}  ({2})" -f ($index + 1), $users[$index].Account, $users[$index].ProfilePath)
+        }
+        $answer = Read-Host 'Accountnummer (0 = annuleren)'
+        if ($answer -eq '0') { return $null }
+        $number = 0
+        if (-not [int]::TryParse($answer, [ref]$number) -or $number -lt 1 -or $number -gt $users.Count) {
+            Write-Host 'Kies een nummer uit de lijst.'
+            continue
+        }
+        $selected = $users[$number - 1]
+        Write-Host "Doelaccount: $($selected.Account)"
+        Write-Host "Profielmap:  $($selected.ProfilePath)"
+        Write-Host "SID:         $($selected.Sid)"
+        Write-Host 'Installatie verwijdert geen gebruikersgegevens.'
+        $confirmation = Read-Host 'Installeren voor dit account? (J = installeren, N = opnieuw kiezen, 0 = annuleren)'
+        if ($confirmation -eq '0') { return $null }
+        if ($confirmation -ieq 'J') { return (Resolve-TargetUser '' $selected.Sid) }
+    }
 }
 
 function New-StepResult {
@@ -752,10 +791,21 @@ function Invoke-LeenlaptopUtility {
     [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'Medium')]
     param([ValidateSet('Check', 'Config', 'Install', 'Cleanup')][string]$Action = 'Check',
         [string]$SourcePath = $PSScriptRoot, [Parameter(Mandatory)][string]$InstallPath,
-        [string]$ConfigPath, [string]$TargetUser)
+        [string]$ConfigPath, [string]$TargetUser, [switch]$Interactive)
     $script:Deadline = $null
     $user = $null
     $legacyProfilePath = ''
+    if ($Interactive) {
+        if ($Action -ne 'Install' -or $TargetUser) { throw '-Interactive vereist -Install zonder -TargetUser.' }
+        $user = Select-TargetUser
+        if (-not $user) {
+            return [pscustomobject]@{
+                Version = $script:UtilityVersion; Action = $Action; Status = 'Cancelled'; ExitCode = 0
+                ConfigSource = ''; Config = $null; Results = @(New-StepResult 'Installatie' 'Skipped' -Detail 'Geannuleerd; niets gewijzigd.')
+            }
+        }
+        $legacyProfilePath = $user.ProfilePath
+    }
     if ($Action -eq 'Install' -and $TargetUser) {
         $user = Resolve-TargetUser $TargetUser ''
         $legacyProfilePath = $user.ProfilePath

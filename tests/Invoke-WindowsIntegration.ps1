@@ -31,6 +31,8 @@ $account = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 
 try {
+    $availableUsers = @(& (Get-Module LeenlaptopSchoonmaak) { Get-AvailableTargetUsers })
+    if ($availableUsers.Sid -notcontains $sid) { throw 'Het runneraccount ontbreekt in de profielkeuzelijst.' }
     $result = Invoke-LeenlaptopUtility -Action Install -SourcePath $source -InstallPath $installPath -ConfigPath $configPath -TargetUser $account
     if ($result.ExitCode -ne 0) { throw 'Eerste installatie is niet geslaagd.' }
     $task = Get-ScheduledTask -TaskName 'LeenlaptopSchoonmaak'

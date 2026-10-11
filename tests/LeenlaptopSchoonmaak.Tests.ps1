@@ -1,6 +1,94 @@
 Import-Module (Join-Path $PSScriptRoot '..\LeenlaptopSchoonmaak.psm1') -Force
 
 InModuleScope LeenlaptopSchoonmaak {
+    Describe 'Interactieve accountkeuze' {
+        BeforeEach {
+            Mock Get-AvailableTargetUsers {
+                [pscustomobject]@{ Sid = 'S-1-5-21-1-2-3-1001'; Account = 'LAPTOP\leenaccount'; ProfilePath = 'C:\Users\leenaccount' }
+                [pscustomobject]@{ Sid = 'S-1-5-21-1-2-3-1002'; Account = 'LAPTOP\beheer'; ProfilePath = 'C:\Users\beheer' }
+            }
+            Mock Resolve-TargetUser { @{ Sid = $Sid; Account = 'LAPTOP\leenaccount'; ProfilePath = $TestDrive } }
+            Mock Write-Host {}
+            $script:answers = New-Object 'System.Collections.Generic.Queue[string]'
+            Mock Read-Host { $script:answers.Dequeue() }
+        }
+        It 'sorteert accounts en resolveert de bevestigde keuze opnieuw via SID' {
+            $script:answers.Enqueue('2'); $script:answers.Enqueue('j')
+            $selected = Select-TargetUser
+            $selected.Sid | Should Be 'S-1-5-21-1-2-3-1001'
+            Assert-MockCalled Resolve-TargetUser -Times 1 -Exactly -Scope It -ParameterFilter { $Sid -eq 'S-1-5-21-1-2-3-1001' -and -not $TargetUser }
+        }
+        It 'weigert lege, niet-numerieke en buiten bereik vallende invoer' {
+            foreach ($answer in @('', 'beheer', '-1', '3', '9999999999999', '2', 'J')) { $script:answers.Enqueue($answer) }
+            (Select-TargetUser).Sid | Should Be 'S-1-5-21-1-2-3-1001'
+            Assert-MockCalled Read-Host -Times 7 -Exactly -Scope It
+        }
+        It 'laat opnieuw kiezen wanneer de bevestiging niet J is' {
+            foreach ($answer in @('1', 'N', '2', 'J')) { $script:answers.Enqueue($answer) }
+            (Select-TargetUser).Sid | Should Be 'S-1-5-21-1-2-3-1001'
+            Assert-MockCalled Resolve-TargetUser -Times 1 -Exactly -Scope It
+        }
+        It 'annuleert vanuit de lijst zonder een account te bevestigen' {
+            $script:answers.Enqueue('0')
+            (Select-TargetUser) | Should Be $null
+            Assert-MockCalled Resolve-TargetUser -Times 0 -Exactly -Scope It
+        }
+        It 'annuleert ook bij de bevestiging' {
+            $script:answers.Enqueue('1'); $script:answers.Enqueue('0')
+            (Select-TargetUser) | Should Be $null
+        }
+        It 'geeft uitleg wanneer er geen bruikbare profielen zijn' {
+            Mock Get-AvailableTargetUsers {}
+            { Select-TargetUser } | Should Throw
+            Assert-MockCalled Read-Host -Times 0 -Exactly -Scope It
+        }
+        It 'annuleert voor het lezen van configuratie of uitvoeren van installatie' {
+            $script:answers.Enqueue('0')
+            Mock Read-UtilityConfiguration { throw 'Mag niet worden aangeroepen' }
+            Mock Install-UtilityPackage { throw 'Mag niet worden aangeroepen' }
+            $report = Invoke-LeenlaptopUtility -Action Install -Interactive -InstallPath $TestDrive
+            $report.Status | Should Be 'Cancelled'
+            $report.ExitCode | Should Be 0
+            Assert-MockCalled Read-UtilityConfiguration -Times 0 -Exactly -Scope It
+            Assert-MockCalled Install-UtilityPackage -Times 0 -Exactly -Scope It
+        }
+        It 'gebruikt de gekozen profielmap voor migratie en behoudt WhatIf' {
+            $script:answers.Enqueue('2'); $script:answers.Enqueue('J')
+            Mock Read-UtilityConfiguration { @{ Config = (Get-DefaultConfiguration); Source = 'test' } }
+            Mock Install-UtilityPackage { throw 'Mag niet worden aangeroepen' }
+            $report = Invoke-LeenlaptopUtility -Action Install -Interactive -InstallPath $TestDrive -WhatIf
+            $report.Config.TargetUserSid | Should Be 'S-1-5-21-1-2-3-1001'
+            Assert-MockCalled Read-UtilityConfiguration -Times 1 -Exactly -Scope It -ParameterFilter { $LegacyProfilePath -eq $TestDrive }
+            Assert-MockCalled Install-UtilityPackage -Times 0 -Exactly -Scope It
+        }
+        It 'weigert conflicterende parameters zonder te vragen' {
+            { Invoke-LeenlaptopUtility -Action Install -Interactive -TargetUser 'LAPTOP\leenaccount' -InstallPath $TestDrive } | Should Throw
+            { Invoke-LeenlaptopUtility -Action Check -Interactive -InstallPath $TestDrive } | Should Throw
+            Assert-MockCalled Read-Host -Times 0 -Exactly -Scope It
+        }
+    }
+
+    Describe 'Beschikbare gebruikersprofielen' {
+        It 'slaat systeemprofielen en niet meer beschikbare accounts over' {
+            Mock Get-CimInstance {
+                [pscustomobject]@{ SID = 'S-1-5-18'; Special = $true; LocalPath = 'system' }
+                [pscustomobject]@{ SID = 'S-1-5-21-1-2-3-1001'; Special = $false; LocalPath = 'leenaccount' }
+                [pscustomobject]@{ SID = 'S-1-5-21-1-2-3-1002'; Special = $false; LocalPath = 'deleted' }
+                [pscustomobject]@{ SID = 'S-1-12-1-1-2-3-4'; Special = $false; LocalPath = 'entra' }
+            }
+            Mock Resolve-TargetUser {
+                if ($Sid -eq 'S-1-5-21-1-2-3-1002') { throw 'Account bestaat niet meer' }
+                @{ Sid = $Sid; Account = $Sid; ProfilePath = $TestDrive }
+            }
+            Mock Write-Warning {}
+            $users = @(Get-AvailableTargetUsers)
+            $users.Count | Should Be 2
+            $users[1].Sid | Should Be 'S-1-12-1-1-2-3-4'
+            Assert-MockCalled Resolve-TargetUser -Times 3 -Exactly -Scope It
+            Assert-MockCalled Write-Warning -Times 1 -Exactly -Scope It
+        }
+    }
+
     Describe 'Configuratie en migratie' {
         It 'heeft een expliciete opt-in voor automatische opschoning' {
             $config = Get-DefaultConfiguration
